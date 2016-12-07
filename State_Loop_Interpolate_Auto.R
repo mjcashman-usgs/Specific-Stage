@@ -8,7 +8,8 @@ require(ggplot2) || install.packages("ggplot2")
 sensitivity<-0.02
 
 #Choose Quantiles
-quantile.selection<-seq(0,1,0.1)
+quantile.selection<-seq(0.1,0.9,0.1) #Range
+Target_Quantile <- 8 #target
 
 #Data Preparation----
 #Import data from working directory
@@ -114,17 +115,19 @@ for(j in 1:length(Site_List)){
   #Prepare Data
   Run.names<-paste0("Run",(1:ncol(quantiles)-1))
   
-  Runs.nos<-list(get(c(Run.names)))
-  All.Runs <- melt(Runs.nos, id.vars = c("date","YEAR","MONTH", "DAY","MINUTE"))
-  
+  Runs.nos<-list(mget((Run.names)))
+  All.Runs <- melt((Runs.nos), id.vars = c("date","YEAR","MONTH", "DAY","MINUTE"))
+      #Runs.nos<-list(Run0,Run1,Run2,Run3,Run4,Run5,Run6,Run7,Run8,Run9,Run10)
+      #All.Runs <- melt(Runs.nos, id.vars = c("date","YEAR","MONTH", "DAY","MINUTE"))
+    
   #Clean up Data from Loop
   rm(d.frame,df.names,Interceptx2,above,i,intersect.points,x.points,x1,x1.slopes,x2.slopes,y.points,x2,Discharge,Runs.nos)
-  rm(list=(Run.names),Run.names)
+  rm(list=(Run.names))
   
   
 
 #Discharge QA Plot----
-  print(ggplot(data=subset(All.Runs,variable=="Q"), aes(x=date,y=value,color=as.factor(L1)))+
+  print(ggplot(data=subset(All.Runs,variable=="Q"), aes(x=date,y=value,color=as.factor(L2)))+
           geom_point(alpha=0.5)+
           ggtitle(paste0("Discharge Quantiles at USGS Gage #", Current_Site))+
           scale_color_discrete(name="Discharge\nQuantile",labels=colnames(quantiles))+
@@ -147,7 +150,7 @@ for(j in 1:length(Site_List)){
         print(paste0("Export of ", name, " Complete"))
       
 #All Quantile Plot----
-     Plot2<-(ggplot(data=subset(All.Runs,variable=="S"), aes(x=date,y=value,color=as.factor(L1),group=as.factor(L1)))+
+     Plot2<-(ggplot(data=subset(All.Runs,variable=="S"), aes(x=date,y=value,color=as.factor(L2),group=as.factor(L2)))+
             geom_point(alpha=0.1)+
             ggtitle(paste0("Specific Stage for USGS Gage #", Current_Site))+
             scale_color_discrete(name="Discharge\nQuantile",labels=colnames(quantiles))+
@@ -163,11 +166,11 @@ for(j in 1:length(Site_List)){
   print(paste0("Export of ", name, " Complete"))
   
   
-#Stage @ 8th Quantile Plot----
-  Target_Quantile <- 8
+#Stage @ Target Quantile Plot----
+
   Target_D <-round(quantiles[Target_Quantile],2)
-  Plot3<-(ggplot(data=subset(All.Runs,variable=="S"&L1==Target_Quantile), aes(x=date,y=value))+
-            ggtitle(paste0("Stage at USGS Gage #", Current_Site,"\n", Target_Quantile,"th Discharge Quantile: ",Target_D, " cfs"))+
+  Plot3<-(ggplot(data=subset(All.Runs,variable=="S"&L2==Run.names[Target_Quantile]), aes(x=date,y=value))+
+            ggtitle(paste0("Stage at USGS Gage #", Current_Site,"\n",  colnames(quantiles)[Target_Quantile], " Discharge Quantile: ",Target_D, " cfs"))+
             scale_x_date(date_breaks = "2 year", date_labels = "%b\n%Y")+
             ylab("Stage Height (ft)")+
             theme(panel.grid.minor = element_blank())+
@@ -182,13 +185,13 @@ for(j in 1:length(Site_List)){
   
 #Combined Quant. S & Q Plot----
   
-  All.Runs.Target<-subset(All.Runs,variable=="S"&L1==Target_Quantile)
+  All.Runs.Target<-subset(All.Runs,variable=="S"&L2==Run.names[Target_Quantile])
   All.Runs.Target<-All.Runs.Target[order(as.Date(All.Runs.Target$date, format="%Y-%m-%d")),]
   Start_Stage<-All.Runs.Target$value[1]
   All.Runs.Target$SS<-All.Runs.Target$value-Start_Stage
   
   Plot4<-(ggplot(data=subset(All.Runs.Target), aes(x=date,y=SS))+
-            ggtitle(paste0("Stage at USGS Gage #", Current_Site,"\n", Target_Quantile-1,"0% Discharge Quantile: ",Target_D, " cfs"))+
+            ggtitle(paste0("Stage at USGS Gage #", Current_Site,"\n", colnames(quantiles)[Target_Quantile]," Discharge Quantile: ",Target_D, " cfs"))+
             scale_x_date(date_breaks = "2 year", date_labels = "%b\n%Y")+
             ylab("Change in Stage Height (ft)")+
             theme(panel.grid.minor = element_blank())+
@@ -227,6 +230,9 @@ for(j in 1:length(Site_List)){
   name<-paste0("Joint_SS_Q_Quant_",Target_Quantile,Current_Site,".png")
   print(paste0("Export of ", name, "Complete"))
   ggsave(grid.draw(g),file=name,path=subDir,width=60,height=40,units="cm",scale=0.3)
+
+  
+#Cleanup
   
   rm(g,g1,g2,ia,ga,ax,Plot1,Plot2,Plot3,Plot4,pp,Start_Stage,Target_D)
   
