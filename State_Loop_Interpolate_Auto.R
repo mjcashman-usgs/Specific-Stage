@@ -99,27 +99,27 @@ for(j in 1:length(Site_List)){
     x.points<-intersect.points + ((x2[intersect.points] - x1[intersect.points]) / (x1.slopes-x2.slopes))
     y.points<-x1[intersect.points] + (x1.slopes*(x.points-intersect.points))
     # Plot.
-    #plot(x1,type='l')
-    #lines(x2,type='l',col='red')
-    #points(x.points,y.points,col='blue')
-    
-    #X1 is the estimated index number whenever discharge is x2
-    
+          #plot(x1,type='l')
+          #lines(x2,type='l',col='red')
+          #points(x.points,y.points,col='blue')
+          #X1 is the estimated index number whenever discharge is x2
     Interceptx2<-Combined_Q_S[x.points,]
     #plot(Interceptx2$date, Interceptx2$U03223425.00060)
-    #fit<-lm(H_S~datetime, data=Interceptx2)
-    #summary(fit)
+          #fit<-lm(H_S~datetime, data=Interceptx2)
+          #summary(fit)
     d.frame<-subset(Interceptx2,Q>(Discharge*(1-sensitivity))&Q<(Discharge*(1+sensitivity)))
     df.names <- assign(paste("Run", i-1,sep=""),d.frame)
   }
+  
   #Prepare Data
-  Runs.nos<-list(Run0, Run1, Run2, Run3, Run4, Run5, Run6, Run7, Run8, Run9, Run10)
+  Run.names<-paste0("Run",(1:ncol(quantiles)-1))
+  
+  Runs.nos<-list(get(c(Run.names)))
   All.Runs <- melt(Runs.nos, id.vars = c("date","YEAR","MONTH", "DAY","MINUTE"))
   
   #Clean up Data from Loop
-  Run.names<-paste0("Run",(1:ncol(quantiles)-1))
   rm(d.frame,df.names,Interceptx2,above,i,intersect.points,x.points,x1,x1.slopes,x2.slopes,y.points,x2,Discharge,Runs.nos)
-  rm(list=(Run.names))
+  rm(list=(Run.names),Run.names)
   
   
 
