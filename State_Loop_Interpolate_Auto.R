@@ -1,43 +1,44 @@
 rm(list=ls())
+start.time.total <- Sys.time()
 #Load Packages
 
 require(reshape2) || install.packages("reshape2")
 require(ggplot2) || install.packages("ggplot2")
 
 #Choose Sensitivity Threshold
-sensitivity<-0.02
+  sensitivity<-0.02
 
 #Choose Quantiles
-quantile.selection<-seq(0.1,0.9,0.1) #Range
-Target_Quantile <- 8 #target
+  #quantile.selection<-seq(0.1,0.9,0.1) #Automatic Range
+  quantile.selection<-c(0.3,0.5,0.7,0.8,0.85,0.9,0.92,0.94,0.96,0.97,0.98,0.99) #Manual Range
+  Target_Quantile <- 8 #target Number in Sequence
 
 #Data Preparation----
 #Import data from working directory
-getwd()
-setwd("D:/R_Projects/Specific Stage") #Set WD
-
-mainDir <- "D:/R_Projects/Specific Stage"
+  getwd()
+  setwd("D:/R_Projects/Specific Stage") #Set WD
+  
+  mainDir <- "D:/R_Projects/Specific Stage"
 
 #Extract Site Numbers to Work On
+   
     #Site_List <-"03223425"
-
     SiteInfo <- read.csv("D:/R_Projects/Specific Stage/Current_Site_List.csv",colClasses="character")
     #Site_Subset <- subset(SiteInfo,RSQA=="SESQA")
     Site_List <- SiteInfo$STAID
 
+#Site Loop
 for(j in 1:length(Site_List)){
   
   Current_Site<-Site_List[j]
   print(paste0("Starting Gage #",Current_Site))
-  
-  
   subDir <- paste0("Output_Gage_",Current_Site)
   
   if (file.exists(subDir)){  } else {
     dir.create(file.path(mainDir, subDir))  }
   
   #Import Files and Format as needed
-  start.time <- Sys.time()
+  start.time.loop <- Sys.time()
   
   print(paste0("Importing Daily Mean Values"))
   Path<-paste0(Current_Site,"_MDV.RDB")
@@ -84,9 +85,7 @@ for(j in 1:length(Site_List)){
     vectorQ<-paste0("Combined_Q_S$",Current_Site,".00060")
     colnames(Combined_Q_S)[which(colnames(Combined_Q_S) == paste0("U",Current_Site,".00060"))] <- 'Q'
     colnames(Combined_Q_S)[which(colnames(Combined_Q_S) == paste0("U",Current_Site,".00065"))] <- 'S'
-    
-    #Run.no<-colnames(quantiles)[i]
-    x1<-Combined_Q_S$Q
+     x1<-Combined_Q_S$Q
     Combined_Q_S$x2<-Discharge
     x2<-Combined_Q_S$x2
     # Find points where x1 is above x2.
@@ -109,28 +108,20 @@ for(j in 1:length(Site_List)){
           #fit<-lm(H_S~datetime, data=Interceptx2)
           #summary(fit)
     d.frame<-subset(Interceptx2,Q>(Discharge*(1-sensitivity))&Q<(Discharge*(1+sensitivity)))
-    df.names <- assign(paste("Run", i-1,sep=""),d.frame)
+    df.names <- assign(paste("Run", i,sep=""),d.frame)
   }
   
   #Prepare Data
-  Run.names<-paste0("Run",(1:ncol(quantiles)-1))
-  
+  Run.names<-paste0("Run",(1:ncol(quantiles)))
   Runs.nos<-list(mget((Run.names)))
   All.Runs <- melt((Runs.nos), id.vars = c("date","YEAR","MONTH", "DAY","MINUTE"))
-      #Runs.nos<-list(Run0,Run1,Run2,Run3,Run4,Run5,Run6,Run7,Run8,Run9,Run10)
-      #All.Runs <- melt(Runs.nos, id.vars = c("date","YEAR","MONTH", "DAY","MINUTE"))
-    
-  #Clean up Data from Loop
-  rm(d.frame,df.names,Interceptx2,above,i,intersect.points,x.points,x1,x1.slopes,x2.slopes,y.points,x2,Discharge,Runs.nos)
-  rm(list=(Run.names))
-  
-  
 
 #Discharge QA Plot----
   print(ggplot(data=subset(All.Runs,variable=="Q"), aes(x=date,y=value,color=as.factor(L2)))+
           geom_point(alpha=0.5)+
           ggtitle(paste0("Discharge Quantiles at USGS Gage #", Current_Site))+
-          scale_color_discrete(name="Discharge\nQuantile",labels=colnames(quantiles))+
+          guides(colour = guide_legend(override.aes = list(alpha = 1)))+
+          scale_color_discrete(name="Discharge\nQuantile",breaks=rev(Run.names),labels=rev(paste(colnames(quantiles),":",round(quantiles,0)," cfs")))+
           scale_x_date(date_breaks = "1 year", date_labels = "%b\n%Y",date_minor_breaks = "6 months", expand=c(0,0))+
           ylab("cfs"))
   name<-paste0("Discharge_Check_", Current_Site,".png")
@@ -150,14 +141,16 @@ for(j in 1:length(Site_List)){
         print(paste0("Export of ", name, " Complete"))
       
 #All Quantile Plot----
-     Plot2<-(ggplot(data=subset(All.Runs,variable=="S"), aes(x=date,y=value,color=as.factor(L2),group=as.factor(L2)))+
-            geom_point(alpha=0.1)+
+     All.Runs$L2<-as.factor(All.Runs$L2)
+     Plot2<-(ggplot(data=subset(All.Runs,variable=="S"), aes(x=date,y=value,color=L2))+
+            geom_point(alpha=0.5)+
             ggtitle(paste0("Specific Stage for USGS Gage #", Current_Site))+
-            scale_color_discrete(name="Discharge\nQuantile",labels=colnames(quantiles))+
+            guides(colour = guide_legend(override.aes = list(alpha = 1)))+
+            scale_color_discrete(name="Discharge\nQuantile",breaks=rev(Run.names),labels=rev(paste(colnames(quantiles),":",round(quantiles,0)," cfs")))+
             scale_x_date(date_breaks = "1 year", date_labels = "%b\n%Y")+
-            ylab("Stage Height")+
+            ylab("Stage Height"))
             # ylim(5,120)
-            coord_cartesian(ylim=c(0,5)))
+           # coord_cartesian(ylim=c(0,5)))
   #geom_smooth(method="lm",alpha=0.7,se=FALSE)
   # geom_smooth(method="loess",alpha=0.5,se=FALSE))
   print(Plot2)
@@ -228,19 +221,27 @@ for(j in 1:length(Site_List)){
   # draw it
   grid.draw(g)
   name<-paste0("Joint_SS_Q_Quant_",Target_Quantile,Current_Site,".png")
-  print(paste0("Export of ", name, "Complete"))
+  print(paste0("Export of ", name, " Complete"))
   ggsave(grid.draw(g),file=name,path=subDir,width=60,height=40,units="cm",scale=0.3)
 
   
 #Cleanup
   
+  rm(d.frame,df.names,Interceptx2,above,i,intersect.points,x.points,x1,x1.slopes,x2.slopes,y.points,x2,Discharge,Runs.nos)
+  rm(list=(Run.names))
   rm(g,g1,g2,ia,ga,ax,Plot1,Plot2,Plot3,Plot4,pp,Start_Stage,Target_D)
   
-  
+
+    
 #Finished and Time Elapsed Calculation----
-  end.time <- Sys.time()
-  time.taken <- end.time - start.time
+  end.time.loop <- Sys.time()
+  time.taken <- end.time.loop - start.time.loop
   print(paste0("Finished Gage #",Current_Site))
-  print(paste0("Time Elapsed: ", round(time.taken,3)," sec."))
+  print(paste0("Site Time Elapsed: ", round(time.taken,3)," sec."))
   
 }
+    
+end.time.total <- Sys.time()
+  time.taken.total <- end.time.total - start.time.total
+  print(paste0("Finished Entire Analysis"))
+  print(time.taken.total)
