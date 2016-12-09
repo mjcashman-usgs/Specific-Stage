@@ -7,13 +7,8 @@ mainDir <- "D:/R_Projects/Specific Stage"
 
 #Problem Site Selection
 
-Site_List <- Current_Site
-#Site_List <-"03223425"
-#SiteInfo <- read.csv("D:/R_Projects/Specific Stage/Current_Site_List.csv",colClasses="character")
-#Site_Subset <- subset(SiteInfo,RSQA=="SESQA")
-
-
-#Site Loop
+#Site_List <- Current_Site
+Site_List <-"03272100"
 
   Current_Site<-Site_List
   print(paste0("Starting Gage #",Current_Site))
@@ -49,7 +44,6 @@ Site_List <- Current_Site
   #Combine
   print(paste0("Merging Instantaneous Values"))
   Combined_Q_S <- merge(UV_DISCHARGE,UV_STAGE, all=TRUE) 
-  rm(UV_DISCHARGE,UV_STAGE,Path) 
   
   #Convert Dates
   Combined_Q_S$date <- as.Date(paste(Combined_Q_S$YEAR, Combined_Q_S$MONTH,Combined_Q_S$DAY, sep = "." ), format = "%Y.%m.%d" )
@@ -58,9 +52,10 @@ Site_List <- Current_Site
   ##Plot Data for All data sources
   vectorQ<-paste0("DV_MEAN$",Current_Site,".00060")
   colnames(DV_MEAN)[which(colnames(DV_MEAN) == paste0("D",Current_Site,".00060"))] <- 'Q'
-  ggplot(data=subset(DV_MEAN, Q>0), aes(x=date, y=Q))+
+  DV_MEAN$Q[DV_MEAN$Q==-123456E20] <- NA
+  ggplot(data=subset(DV_MEAN), aes(x=date, y=Q))+
             ggtitle(paste0("Mean Daily Discharge Record at USGS Gage #", Current_Site))+
-            geom_path(alpha=0.5)+
+            geom_line(alpha=0.5)+
             ylab("MDV Discharge (cfs)")+
             #coord_cartesian(ylim=c(0,3000))+
             # geom_hline(yintercept=Target_D, color="red",size=1.5)+
@@ -68,10 +63,11 @@ Site_List <- Current_Site
   
   vectorQ<-paste0("UV_STAGE$",Current_Site,".00065")
   colnames(UV_STAGE)[which(colnames(UV_STAGE) == paste0("U",Current_Site,".00065"))] <- 'S'
-  UV_STAGE$date <- as.Date(paste(UV_STAGE$YEAR, UV_STAGE$MONTH,UV_STAGE$DAY, sep = "." )  , format = "%Y.%m.%d" )
-  ggplot(data=subset(UV_STAGE,S>0), aes(x=date, y=S))+
+  UV_STAGE$S[UV_STAGE$S==-123456E20] <- NA
+     UV_STAGE$date <- as.Date(paste(UV_STAGE$YEAR, UV_STAGE$MONTH,UV_STAGE$DAY, sep = "." )  , format = "%Y.%m.%d" )
+  ggplot(data=subset(UV_STAGE), aes(x=date, y=S))+
     ggtitle(paste0("Unit Value Stage Record at USGS Gage #", Current_Site))+
-    geom_path(alpha=0.5)+
+    geom_line(alpha=0.5)+
     ylab("Unit Stage (feet)")+
     #coord_cartesian(ylim=c(0,3000))+
     # geom_hline(yintercept=Target_D, color="red",size=1.5)+
@@ -79,17 +75,15 @@ Site_List <- Current_Site
   
   vectorQ<-paste0("UV_DISCHARGE$",Current_Site,".00060")
   colnames(UV_DISCHARGE)[which(colnames(UV_DISCHARGE) == paste0("U",Current_Site,".00060"))] <- 'Q'
+  UV_DISCHARGE$Q[UV_DISCHARGE$Q==-123456E20] <- NA
   UV_DISCHARGE$date <- as.Date(paste(UV_DISCHARGE$YEAR, UV_DISCHARGE$MONTH,UV_STAGE$DAY, sep = "." )  , format = "%Y.%m.%d" )
   ggplot(data=subset(UV_DISCHARGE,Q>0), aes(x=date, y=Q))+
     ggtitle(paste0("Unit Value Discharge Record at USGS Gage #", Current_Site))+
-    geom_path(alpha=0.5)+
-    ylab("Unit Stage (feet)")+
+    geom_line(alpha=0.5)+
+    ylab("Unit Discharge (Cfs)")+
     #coord_cartesian(ylim=c(0,3000))+
     # geom_hline(yintercept=Target_D, color="red",size=1.5)+
     theme(axis.title.x=element_blank())
-  
-  
-  
   
   #Stage/Quantile Loop----
   print(paste0("Starting Quantile Selection"))
