@@ -7,7 +7,7 @@ require(ggplot2) || install.packages("ggplot2")
 require(dataRetrieval) || install.packages("dataRetrieval")
 
 #Data Retrieval
-siteNumber <- c('05114000','03223425')
+siteNumber <- c('12045500')
 parameterCd <- c('00060','00065')
 startDate <- ""
 endDate <- ""
@@ -23,13 +23,13 @@ sensitivity<-0.10
 
 #Choose Quantiles
 quantile.selection<-c(0.3,0.5,0.7,0.8,0.9) #Manual Range
-Target_Quantile <- 6 #target Number in Sequence
+Target_Quantile <- 4 #target Number in Sequence
 
 #Data Preparation----
 #Import data from working directory
 getwd()
-setwd("D:/R_Projects/Specific Stage") #Set WD
-mainDir <- "D:/R_Projects/Specific Stage"
+setwd("D:/R_Projects/Specific Stage/NWIS") #Set WD
+mainDir <- "D:/R_Projects/Specific Stage/NWIS"
 
 #Extract Site Numbers to Work On
 Site_List <- siteNumber
@@ -94,7 +94,7 @@ for(j in 1:length(Site_List)){
   All.Runs <- melt((Runs.nos), id.vars = c("dateTime"))
   
   #Discharge QA Plot----
-  print(ggplot(data=subset(All.Runs,variable=="Q"), aes(x=dateTime,y=value,color=as.factor(L2)))+
+  print(ggplot(data=subset(All.Runs,variable=="Q"), aes(x=dateTime,y=as.numeric(value),color=as.factor(L2)))+
           geom_point(alpha=0.5)+
           ggtitle(paste0("Discharge Quantiles at USGS Gage #", Current_Site))+
           guides(colour = guide_legend(override.aes = list(alpha = 1)))+
@@ -118,9 +118,38 @@ for(j in 1:length(Site_List)){
   ggsave(name,path=(subDir),width=60,height=40,units="cm",scale=0.3)
   print(paste0("Export of ", name, " Complete"))
   
+  #UV Hydrograph Plot----
+  Last_Site_UV$Q[Last_Site_UV$Q==-999999] <- NA
+  
+  Plot1a<-(ggplot(data=subset(Last_Site_UV), aes(x=dateTime, y=Q))+
+             ggtitle(paste0("UV Hydrograph at USGS Gage #", Current_Site))+
+             geom_line(alpha=0.5)+
+             ylab("UV Instant Discharge (cfs)")+
+             #coord_cartesian(ylim=c(0,3000))+
+             # geom_hline(yintercept=Target_D, color="red",size=1.5)+
+             theme(axis.title.x=element_blank()))
+  print(Plot1a)
+  name<-paste0("UV_Hydrograph_", Current_Site,".png")
+  ggsave(name,path=(subDir),width=60,height=40,units="cm",scale=0.3)
+  print(paste0("Export of ", name, " Complete"))
+  
+  #UV Stage Plot----
+  Last_Site_UV$S[Last_Site_UV$S==-999999] <- NA
+  Plot1b<-(ggplot(data=subset(Last_Site_UV), aes(x=dateTime, y=S))+
+             ggtitle(paste0("UV Stage at USGS Gage #", Current_Site))+
+             geom_line(alpha=0.5)+
+             ylab("UV Instant Stage (feet)")+
+             #coord_cartesian(ylim=c(0,3000))+
+             # geom_hline(yintercept=Target_D, color="red",size=1.5)+
+             theme(axis.title.x=element_blank()))
+  print(Plot1b)
+  name<-paste0("UV_Stage_", Current_Site,".png")
+  ggsave(name,path=(subDir),width=60,height=40,units="cm",scale=0.3)
+  print(paste0("Export of ", name, " Complete"))
+  
   #All Quantile Plot----
   All.Runs$L2<-as.factor(All.Runs$L2)
-  Plot2<-(ggplot(data=subset(All.Runs,variable=="S"), aes(x=dateTime,y=value,color=L2))+
+  Plot2<-(ggplot(data=subset(All.Runs,variable=="S"), aes(x=dateTime,y=as.numeric(value),color=L2))+
             geom_point(alpha=0.5)+
             ggtitle(paste0("Specific Stage for USGS Gage #", Current_Site))+
             guides(colour = guide_legend(override.aes = list(alpha = 1)))+

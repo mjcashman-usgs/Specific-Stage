@@ -7,7 +7,7 @@ getwd()
 setwd("D:/R_Projects/Specific Stage") #Set WD
 
 rm(list=ls())
-G_03223425_DV_MEAN <- read.delim("D:/R_Projects/Specific Stage/03223425_DV_MEAN.RDB", comment.char="#")
+G_03223425_DV_MEAN <- read.delim("D:/R_Projects/Specific Stage/03223425_MDV_DISCHARGE.RDB", comment.char="#")
 G_03223425_DV_MEAN<-G_03223425_DV_MEAN[-1,]
 G_03223425_UV_DISCHARGE <- read.delim("D:/R_Projects/Specific Stage/03223425_UV_DISCHARGE.RDB", comment.char="#")
 G_03223425_UV_DISCHARGE<-G_03223425_UV_DISCHARGE[-1,]
@@ -76,13 +76,13 @@ G_03223425_Target<-subset(G_03223425,U03223425.00060>(Target_Discharge*0.995)&U0
       ggplot(data=G_03223425_Target,aes(x=date, y=U03223425.00065))+
         geom_point(alpha=0.5)+ 
         stat_smooth()+
-        ylab("Stage Height")
+        ylab("Stage Height")+
         scale_x_date(date_breaks = "1 year", date_labels = "%b\n%Y",date_minor_breaks = "6 months", expand=c(0,0))
           
        
         
           #Convert Dates
-          library(lubridate) || install.packages("lubridate")
+          library(lubridate)
           G_03223425_Target$date <- as.Date(paste(G_03223425_Target$YEAR, G_03223425_Target$MONTH,G_03223425_Target$DAY, sep = "." )  , format = "%Y.%m.%d" )
           G_03223425_Target$Time <- as.POSIXct(G_03223425_Target$MINUTE,format="%M")
           G_03223425_Target$datetime <- as.POSIXct(paste(G_03223425_Target$YEAR, G_03223425_Target$MONTH,G_03223425_Target$DAY,G_03223425_Target$DAY, sep = "." )  , format = "%Y.%b.%d.%M" )

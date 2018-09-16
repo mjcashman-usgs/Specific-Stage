@@ -1,7 +1,9 @@
-rm(list=ls())
 #Load Packages
 require(reshape2) || install.packages("reshape2")
 require(ggplot2) || install.packages("ggplot2")
+
+#Data Preparation----
+rm(list=ls())
 
 #Choose Sensitivity Threshold
   sensitivity<-0.05
@@ -14,7 +16,7 @@ require(ggplot2) || install.packages("ggplot2")
       getwd()
       setwd("D:/R_Projects/Specific Stage") #Set WD
       
-      G_03223425_DV_MEAN <- read.delim("D:/R_Projects/Specific Stage/03223425_DV_MEAN.RDB", comment.char="#")
+      G_03223425_DV_MEAN <- read.delim("D:/R_Projects/Specific Stage/03223425_MDV_DISCHARGE.RDB", comment.char="#")
       G_03223425_DV_MEAN<-G_03223425_DV_MEAN[-1,]
       write.csv(G_03223425_DV_MEAN, file = "G_03223425_DV_MEAN.csv")
       G_03223425_DV_MEAN<-read.csv("D:/R_Projects/Specific Stage/G_03223425_DV_MEAN.csv")      
@@ -28,31 +30,29 @@ require(ggplot2) || install.packages("ggplot2")
       G_03223425_UV_STAGE<-G_03223425_UV_STAGE[-1,]
       write.csv(G_03223425_UV_STAGE, file = "G_03223425_UV_STAGE.csv")
       G_03223425_UV_STAGE<-read.csv("D:/R_Projects/Specific Stage/G_03223425_UV_STAGE.csv")      
-      
   
   #Combine
       G_03223425 <- merge(G_03223425_UV_DISCHARGE,G_03223425_UV_STAGE, all=TRUE) 
       rm(G_03223425_UV_DISCHARGE,G_03223425_UV_STAGE) 
   
-
   #Convert Dates
     G_03223425$date <- as.Date(paste(G_03223425$YEAR, G_03223425$MONTH,G_03223425$DAY, sep = "." )  , format = "%Y.%m.%d" )
     
-  # ####Discharge Quantile Determination####
-  #   quantiles<-quantile(G_03223425_DV_MEAN$D03223425.00060,probs=seq(0,1,0.1))
-  #   quantiles 
-  #   Target_Discharge<-quantiles[[5+1]]
-  #   Target_Discharge
+#####Discharge Quantile Determination####
+    quantiles<-quantile(G_03223425_DV_MEAN$D03223425.00060,probs=seq(0,1,0.1))
+    quantiles
+    Target_Discharge<-quantiles[[5+1]]
+    Target_Discharge
 
-##### Checking the Proper Discharge values #####-----------------------------------------------------------
-  # ggplot(data=G_03223425_DV_MEAN, aes(x=as.numeric(row.names(G_03223425_DV_MEAN)), y=D03223425.00060))+
-  #   ggtitle(paste("Hollofield Hydrograph"))+
-  #   geom_path(alpha=0.5)+
-  #   ylab("Discharge (cfs)")+
-  #   geom_hline(yintercept=Target_Discharge, color="red",size=1.5)+
-  #   theme(axis.title.x=element_blank())
+#####Checking the Proper Discharge values #####-----------------------------------------------------------
+    ggplot(data=G_03223425_DV_MEAN, aes(x=as.numeric(row.names(G_03223425_DV_MEAN)), y=D03223425.00060))+
+      ggtitle(paste("Hollofield Hydrograph"))+
+      geom_path(alpha=0.5)+
+      coord_trans(y="log")+
+      ylab("Discharge (cfs)")+
+      geom_hline(yintercept=Target_Discharge, color="red",size=1.5)+
+      theme(axis.title.x=element_blank())
 
-  
 
 ####Specific Stage Loop for each Quantile####
     quantiles<-quantile(G_03223425_DV_MEAN$D03223425.00060,probs=quantile.selection)
@@ -90,8 +90,8 @@ require(ggplot2) || install.packages("ggplot2")
       d.frame<-subset(Interceptx2,U03223425.00060>(Discharge*(1-sensitivity))&U03223425.00060<(Discharge*(1+sensitivity)))
       df.names <- assign(paste("Run", i-1,sep=""),d.frame)
     }
+  
   #Prepare Data
-    
     Runs.nos<-list(Run0, Run1, Run2, Run3, Run4, Run5, Run6, Run7, Run8, Run9, Run10)
     All.Runs <- melt(Runs.nos, id.vars = c("date","YEAR","MONTH", "DAY","MINUTE"))
     #Clean up Data from Loop

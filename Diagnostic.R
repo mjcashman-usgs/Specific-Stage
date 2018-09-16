@@ -21,7 +21,7 @@ Site_List <-"03272100"
   start.time.loop <- Sys.time()
   
   print(paste0("Importing Daily Mean Values"))
-  Path<-paste0(Current_Site,"_MDV.RDB")
+  Path<-paste0(Current_Site,"_MDV_DISCHARGE.RDB")
   DV_MEAN <- read.delim(paste0("D:/R_Projects/Specific Stage/",Path), comment.char="#")
   DV_MEAN<-DV_MEAN[-1,]
   write.csv(DV_MEAN, file = "DV_MEAN.csv")

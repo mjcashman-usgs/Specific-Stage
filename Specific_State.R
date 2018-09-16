@@ -1,16 +1,19 @@
-#Summary Results of Error Analysis
-getwd()
-require(ggplot2) || install.packages("ggplot2")
+#Load Libraries 
+library(ggplot2)
+library(reshape2)
+
+#Data Preparation----
+rm(list=ls())
 
 #Import data from working directory
 getwd()
 setwd("D:/R_Projects/Specific Stage") #Set WD
 
 rm(list=ls())
-G_03223425_DV_MEAN <- read.delim("D:/R_Projects/Specific Stage/03223425_DV_MEAN.RDB", comment.char="#")
+G_03223425_DV_MEAN <- read.delim("D:/R_Projects/Specific Stage/03223425_MDV_DISCHARGE.RDB", comment.char="#")
 G_03223425_DV_MEAN<-G_03223425_DV_MEAN[-1,]
-write.csv(G_03223425_DV_MEAN, file = "G_03223425_DV_MEAN.csv")
-G_03223425_DV_MEAN<-read.csv("D:/R_Projects/Specific Stage/G_03223425_DV_MEAN.csv")      
+write.csv(G_03223425_DV_MEAN, file = "G_03223425_MDV_DISCHARGE.csv")
+G_03223425_DV_MEAN<-read.csv("D:/R_Projects/Specific Stage/G_03223425_MDV_DISCHARGE.csv")      
 
 G_03223425_UV_DISCHARGE <- read.delim("D:/R_Projects/Specific Stage/03223425_UV_DISCHARGE.RDB", comment.char="#")
 G_03223425_UV_DISCHARGE<-G_03223425_UV_DISCHARGE[-1,]
@@ -61,15 +64,13 @@ ggplot(data=G_03223425_DV_MEAN, aes(x=as.numeric(row.names(G_03223425_DV_MEAN)),
     
     #Plot  Stage
     ggplot()+
-      geom_point(data=G_03223425,aes(x=date, y=U03223425.00065),alpha=0.5)
+      geom_point(data=G_03223425,aes(x=date, y=U03223425.00065),alpha=0.5)+
       #stat_smooth()+
       ylab("Stage Height")+
     scale_x_date(date_breaks = "1 year", date_labels = "%b\n%Y",date_minor_breaks = "6 months", expand=c(0,0))
-    
-    
-    
-          #Convert Dates
-          library(lubridate) || install.packages("lubridate")
+  
+    #Convert Dates
+        library(lubridate)
           G_03223425_Target$date <- as.Date(paste(G_03223425_Target$YEAR, G_03223425_Target$MONTH,G_03223425_Target$DAY, sep = "." )  , format = "%Y.%m.%d" )
           G_03223425_Target$Time <- as.POSIXct(G_03223425_Target$MINUTE,format="%M")
           G_03223425_Target$datetime <- as.POSIXct(paste(G_03223425_Target$YEAR, G_03223425_Target$MONTH,G_03223425_Target$DAY,G_03223425_Target$DAY, sep = "." )  , format = "%Y.%b.%d.%M" )
