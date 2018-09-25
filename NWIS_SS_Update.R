@@ -1,36 +1,49 @@
 #Begin Run----
-  rm(list=ls())
-  start.time.total <- Sys.time()
+rm(list=ls())
+start.time.total <- Sys.time()
 
 #Load Packages
-  if (!require("pacman")) install.packages("pacman"); library(pacman)
-  p_load(tidyverse, ggthemes, fs, stringr)
+if (!require("pacman")) install.packages("pacman"); library(pacman)
+p_load(tidyverse, ggthemes, fs, stringr, dataRetrieval, data.table)
 
 #Set and create data and export directories ----
-  mainDir <- getwd()
-  readDir <- paste0(mainDir,"/Data/") 
-  dir_create(readDir) #Create data directory
-  exportDir <- paste0(mainDir,"/Export/")
-  dir_create(exportDir) #Create Export directory
-  
-#Set Analysis Paramaters ---- #Can this be later added interactively into a Shiny app?
-  sensitivity <- 0.02 #Intercept sensistivity threshold 
-  
-  #Manual
-    quantile_selection <- c(0.3,0.5,0.7,0.8,0.85,0.9,0.92,0.94,0.96,0.97,0.98,0.99,0.9975)
-  #Automatic
-    #quantile_selection <- seq(0.1,0.9,0.1)
-  
-  target_quantile <- 14 #target Number in Sequence
-  
+mainDir <- getwd()
+exportDir <- paste0(mainDir,"/Export/")
+dir_create(exportDir) #Create Export directory
+
 #Extract Site Numbers to Work On----
-  #Manual
-    Site_List <- c("01589035")
-  #Automatic
-    #Site_List <- list.files(path=readDir, pattern="*.csv")
-    
+Site_List <- c("01589025","01589035")
+
+#Import data from NWIS
+daily <- readNWISdv(siteNumbers = Site_List,
+           parameterCd = c("00060"),
+           startDate = "",
+           endDate = "") %>% renameNWISColumns()
+
+uvdata <- readNWISuv(siteNumbers = Site_List,
+           parameterCd = c("00060","00065"),
+           startDate = "",
+           endDate = "") %>% renameNWISColumns()
+
+#Write data locally
+NWISDir <- paste0(mainDir,"/NWIS_pulls/")
+dir_create(NWISDir) #Create Export directory
+fwrite(daily,paste0(NWISDir,"daily.csv"))
+fwrite(uvdata,paste0(NWISDir,"uvdata.csv"))
+
+#Set Analysis Paramaters ---- #Can this be later added interactively into a Shiny app?
+sensitivity <- 0.02 #Intercept sensistivity threshold 
+
+#Manual
+  Quantiles <- c(0.3,0.5,0.7,0.8,0.85,0.9,0.92,0.94,0.96,0.97,0.98,0.99,0.9975)
+#Automatic
+#quantile_selection <- seq(0.1,0.9,0.1)
+
+target_quantile <- 14 #target Number in Sequence
+
+
 #Create standard ggtheme
-  theme_ss <- function(base_size=12, base_family="helvetica") {
+theme_ss <- function(base_size=12, base_family="helvetica") {
   library(grid)
   library(ggthemes)
   (theme_foundation(base_size=base_size, base_family=base_family)
@@ -61,6 +74,48 @@
   
 }
 
+
+SS <- function(Site, sensitivity, Quantiles, Target_Quant) {
+  site_daily <- daily %>% filter(site_no == Site)
+  site_uv <- uvdata %>% filter(site_no == Site)
+  
+  quantiles <- quantile(site_daily$Flow, probs=Quantiles, na.rm=TRUE)
+  
+  for(i in 1:(length(quantiles))) {
+    Discharge <- quantiles[[i]]
+    # Find points where Flow_Inst is above target discharge <- can this be interpolated
+    # Points always intersect when above=TRUE, then FALSE or reverse 
+    above<-site_uv$Flow_Inst>Discharge
+    
+    
+    intersect.index<-which(diff(above)!=0)
+    
+    #Test
+    x1<-site_uv$Flow_Inst
+    site_uv$x2<-Discharge
+    x2<-site_uv$x2
+    
+    # Find the slopes for each line segment.
+    Intersect.slopes<-site_uv$Flow_Inst[intersect.index+1]-site_uv$Flow_Inst[intersect.index]
+    # Find the intersection point fraction for each segment.
+    x.points <- intersect.index + ((Discharge - site_uv$Flow_Inst[intersect.index]) / (x1.slopes))
+    intersect.points <- as.data.frame(x.points)
+    intersect.points$y.points<-Discharge
+    as.POSIXct(intersect.points$x.points)
+    
+    
+    d.frame<-subset(Interceptx2,Q>(Discharge*(1-sensitivity))&Q<(Discharge*(1+sensitivity)))
+    df.names <- assign(paste("Run", i,sep=""),d.frame)
+  }
+  
+  #Prepare Data
+  Run.names<-paste0("Run",(1:ncol(quantiles)))
+  Runs.nos<-list(mget((Run.names)))
+  All.Runs <- melt((Runs.nos), id.vars = c("date.time"),measure.vars = c("Q","S"))
+  
+}
+
+#Scrap beyond here ----
 #Site Loop ----
 for(j in 1:length(Site_List)){
   
@@ -70,7 +125,7 @@ for(j in 1:length(Site_List)){
   print(paste0("Starting Gage #",Current_Site, "; Site ",j," of ", length(Site_List)))
   subDir <- paste0("Output_Gage_",Current_Site)
   finalDir <- paste0(exportDir,subDir) %>%
-  dir_create(finalDir) #Create data directory
+    dir_create(finalDir) #Create data directory
   
   #Identify fiels to import
   file.list<-list.files(readDir)
@@ -88,11 +143,11 @@ for(j in 1:length(Site_List)){
   
   
   #Merging uv data 
-    Combined_Q_S <- merge(UV_DISCHARGE,UV_STAGE, by="ISO 8601 UTC", all=FALSE) 
+  Combined_Q_S <- merge(UV_DISCHARGE,UV_STAGE, by="ISO 8601 UTC", all=FALSE) 
   
   #Data Cleanup
-    rm(UV_DISCHARGE,UV_STAGE,Path) 
-    
+  rm(UV_DISCHARGE,UV_STAGE,Path) 
+  
   colnames(DV_MEAN)[which(colnames(DV_MEAN) == paste0("Value"))] <- 'Q'
   #colnames(DV_MEAN)[which(colnames(DV_MEAN) == paste0(timestamp))] <- 'date.time'
   #DV_MEAN$date.time = substr(DV_MEAN[,2],1,nchar(DV_MEAN[,2])-4)
@@ -103,7 +158,7 @@ for(j in 1:length(Site_List)){
   
   colnames(Combined_Q_S)[which(colnames(Combined_Q_S) == paste0("Value.x"))] <- 'Q'
   colnames(Combined_Q_S)[which(colnames(Combined_Q_S) == paste0("Value.y"))] <- 'S'
-
+  
   Combined_Q_S$date.time<-Combined_Q_S[,2]
   Combined_Q_S$date.time<-as.POSIXct(Combined_Q_S$date.time, tz=tz, format="%Y-%m-%d %H:%M:%S")
   
@@ -124,9 +179,9 @@ for(j in 1:length(Site_List)){
   
   for(i in 1:(ncol(quantiles))) {
     Discharge<-quantiles[i]
-    x1<-site_uv$Flow_Inst
-    site_uv$x2<-Discharge
-    x2<-site_uv$x2
+    x1<-Combined_Q_S$Q
+    Combined_Q_S$x2<-Discharge
+    x2<-Combined_Q_S$x2
     # Find points where x1 is above x2.
     above<-x1>x2
     print(paste0("Points Above Target Discharge: Mean Daily Quantile ", colnames(quantiles)[i]))
@@ -137,7 +192,7 @@ for(j in 1:length(Site_List)){
     x1.slopes<-x1[intersect.points+1]-x1[intersect.points]
     x2.slopes<-x2[intersect.points+1]-x2[intersect.points]
     # Find the intersection for each segment.
-    x.points1<-intersect.points + ((x2[intersect.points] - x1[intersect.points]) / (x1.slopes-x2.slopes))
+    x.points<-intersect.points + ((x2[intersect.points] - x1[intersect.points]) / (x1.slopes-x2.slopes))
     y.points<-x1[intersect.points] + (x1.slopes*(x.points-intersect.points))
     # Plot.
     #plot(x1,type='l')
