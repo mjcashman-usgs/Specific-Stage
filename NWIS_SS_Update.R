@@ -7,8 +7,7 @@ if (!require("pacman")) install.packages("pacman"); library(pacman)
 p_load(tidyverse, ggthemes, fs, stringr, dataRetrieval, data.table)
 
 #Set and create data and export directories ----
-mainDir <- getwd()
-exportDir <- paste0(mainDir,"/Export/")
+exportDir <-"~/Export/"
 dir_create(exportDir) #Create Export directory
 
 #Extract Site Numbers to Work On----
@@ -98,15 +97,25 @@ SS <- function(Site, sensitivity, Quantiles, Target_Quant) {
     # Find the slopes for each line segment.
     Intersect.slopes<-site_uv$Flow_Inst[intersect.index+1]-site_uv$Flow_Inst[intersect.index]
     # Find the intersection point fraction for each segment.
-    x.points <- intersect.index + ((Discharge - site_uv$Flow_Inst[intersect.index]) / (x1.slopes))
+    x.points <- intersect.index + ((Discharge - site_uv$Flow_Inst[intersect.index]) / (Intersect.slopes))
     intersect.points <- as.data.frame(x.points)
-    intersect.points$y.points<-Discharge
-    as.POSIXct(intersect.points$x.points)
     
+    index.fraction<-intersect.points %>%
+      separate(x.points, into = c("index","fraction"))
+    index.fraction$fraction<-index.fraction$fraction %>%
+      replace_na(0)#Split decimals
+    
+    index.fraction$fraction <- paste("0.", index.fraction$fraction, sep="") #Add 0. to front of decimal values
+    index.fraction$secondspast <- round(as.numeric(index.fraction$fraction)*15*60)
+
+    QestTime<-site_uv$dateTime[as.numeric(index.fraction$index)]+index.fraction$secondspast #Estimated time of target Q
+    
+    approx(site_uv$dateTime, y = site_uv$Flow_Inst, xout = QestTime) 
     
     d.frame<-subset(Interceptx2,Q>(Discharge*(1-sensitivity))&Q<(Discharge*(1+sensitivity)))
     df.names <- assign(paste("Run", i,sep=""),d.frame)
   }
+
   
   #Prepare Data
   Run.names<-paste0("Run",(1:ncol(quantiles)))
