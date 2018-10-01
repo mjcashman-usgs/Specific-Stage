@@ -1,48 +1,30 @@
 #Begin Run----
 rm(list=ls())
-start.time.total <- Sys.time()
 
 #Load Packages
 if (!require("pacman")) install.packages("pacman"); library(pacman)
 p_load(tidyverse, ggthemes, fs, stringr, dataRetrieval, data.table)
 
-#Set and create data and export directories ----
-exportDir <-"~/Export/"
-dir_create(exportDir) #Create Export directory
-
-#Extract Site Numbers to Work On----
-Site_List <- c("01589025","01589035")
-
-#Import data from NWIS
-daily <- readNWISdv(siteNumbers = Site_List,
-           parameterCd = c("00060"),
-           startDate = "",
-           endDate = "") %>% renameNWISColumns()
-
-uvdata <- readNWISuv(siteNumbers = Site_List,
-           parameterCd = c("00060","00065"),
-           startDate = "",
-           endDate = "") %>% renameNWISColumns()
-
-#Write data locally
-NWISDir <- paste0(mainDir,"/NWIS_pulls/")
-dir_create(NWISDir) #Create Export directory
-fwrite(daily,paste0(NWISDir,"daily.csv"))
-fwrite(uvdata,paste0(NWISDir,"uvdata.csv"))
-
-#Set Analysis Paramaters ---- #Can this be later added interactively into a Shiny app?
-sensitivity <- 0.02 #Intercept sensistivity threshold 
-
-#Manual
-  Quantiles <- c(0.3,0.5,0.7,0.8,0.85,0.9,0.92,0.94,0.96,0.97,0.98,0.99,0.9975)
-#Automatic
-#quantile_selection <- seq(0.1,0.9,0.1)
-
-target_quantile <- 14 #target Number in Sequence
-
-
-#Create standard ggtheme
-theme_ss <- function(base_size=12, base_family="helvetica") {
+#Define Functions ----
+read_sites <- function(Site_List) {
+  sitedata <- readNWISsite(siteNumbers = Site_List)
+  daily <- readNWISdv(siteNumbers = Site_List,
+                      parameterCd = c("00060"),
+                      startDate = "",
+                      endDate = "") %>% renameNWISColumns()
+  
+  uvdata <- readNWISuv(siteNumbers = Site_List,
+                       parameterCd = c("00060","00065"),
+                       startDate = "",
+                       endDate = "") %>% renameNWISColumns()
+  
+    NWISDir <- paste0("./NWIS_pulls/")
+  dir_create(NWISDir) #Create Export directory
+  fwrite(daily,paste0(NWISDir,"daily.csv"))
+  fwrite(uvdata,paste0(NWISDir,"uvdata.csv"))
+  fwrite(sitedata,paste0(NWISDir,"sitedata.csv"))
+}
+theme_ss <- function(base_size=12, base_family="sans") {
   library(grid)
   library(ggthemes)
   (theme_foundation(base_size=base_size, base_family=base_family)
@@ -72,20 +54,33 @@ theme_ss <- function(base_size=12, base_family="helvetica") {
     ))
   
 }
-
-
-SS <- function(Site, sensitivity, Quantiles, Target_Quant) {
+Plot_DV <- function(Site) {#Plot Stage and Discharge data
+  ggplot(data=subset(daily, site_no == Site), aes(x=Date, y=Flow))+
+    ggtitle(paste0("Mean Daily Hydrograph at USGS Gage #", Site), subtitle = subset(sitedata, site_no == Site)$station_nm)+
+    theme_ss()+
+    geom_line(alpha=0.5)+
+    ylab("Mean Daily Discharge (cfs)")
+}
+Plot_UV <- function(Site) {#Plot Stage and Discharge data
+  ggplot(data=subset(site_daily,site_no == Site&Flow > 0), aes(x=Date, y=Flow))+
+    ggtitle(paste0("Mean Daily Hydrograph at USGS Gage #", Site), subtitle = subset(sitedata, site_no == Site)$station_nm)+
+    theme_ss()+
+    geom_line(alpha=0.5)+
+    ylab("Mean Daily Discharge (cfs)")
+}
+SS <- function(Site, Quantiles) {
   site_daily <- daily %>% filter(site_no == Site)
   site_uv <- uvdata %>% filter(site_no == Site)
   
   quantiles <- quantile(site_daily$Flow, probs=Quantiles, na.rm=TRUE)
+  
+  Runlist = list()
   
   for(i in 1:(length(quantiles))) {
     Discharge <- quantiles[[i]]
     # Find points where Flow_Inst is above target discharge <- can this be interpolated
     # Points always intersect when above=TRUE, then FALSE or reverse 
     above<-site_uv$Flow_Inst>Discharge
-    
     
     intersect.index<-which(diff(above)!=0)
     
@@ -95,135 +90,63 @@ SS <- function(Site, sensitivity, Quantiles, Target_Quant) {
     x2<-site_uv$x2
     
     # Find the slopes for each line segment.
-    Intersect.slopes<-site_uv$Flow_Inst[intersect.index+1]-site_uv$Flow_Inst[intersect.index]
+    Intersect.slopes <- site_uv$Flow_Inst[intersect.index+1]-site_uv$Flow_Inst[intersect.index]
     # Find the intersection point fraction for each segment.
     x.points <- intersect.index + ((Discharge - site_uv$Flow_Inst[intersect.index]) / (Intersect.slopes))
     intersect.points <- as.data.frame(x.points)
     
-    index.fraction<-intersect.points %>%
+    index.fraction <- intersect.points %>% #Split decimals
       separate(x.points, into = c("index","fraction"))
-    index.fraction$fraction<-index.fraction$fraction %>%
-      replace_na(0)#Split decimals
+    
+    index.fraction$fraction <- index.fraction$fraction %>% #Replace NA with 0's
+      replace_na(0)
     
     index.fraction$fraction <- paste("0.", index.fraction$fraction, sep="") #Add 0. to front of decimal values
     index.fraction$secondspast <- round(as.numeric(index.fraction$fraction)*15*60)
-
+    
     QestTime<-site_uv$dateTime[as.numeric(index.fraction$index)]+index.fraction$secondspast #Estimated time of target Q
     
-    approx(site_uv$dateTime, y = site_uv$Flow_Inst, xout = QestTime) 
+    Approx_Flow <- as.tibble(approx(site_uv$dateTime, y = site_uv$Flow_Inst, xout = QestTime))  %>%
+      left_join(as.tibble(approx(site_uv$dateTime, y = site_uv$GH_Inst, xout = QestTime)), by = "x") %>%
+      rename(GH_Inst = y.x) %>%
+      rename(Flow_Inst = y.y) %>%
+      rename(dateTime = x)
     
-    d.frame<-subset(Interceptx2,Q>(Discharge*(1-sensitivity))&Q<(Discharge*(1+sensitivity)))
-    df.names <- assign(paste("Run", i,sep=""),d.frame)
+    df.names <- assign(paste("Run", i,sep=""), Approx_Flow)
+    Approx_Flow$i <- paste("Run", i,sep="")
+    Runlist[[i]] <- Approx_Flow
   }
-
   
-  #Prepare Data
-  Run.names<-paste0("Run",(1:ncol(quantiles)))
-  Runs.nos<-list(mget((Run.names)))
-  All.Runs <- melt((Runs.nos), id.vars = c("date.time"),measure.vars = c("Q","S"))
+  #Bind quantile lists into one dataframe
+  SS_bind <- bind_rows(Runlist)
   
 }
 
-#Scrap beyond here ----
-#Site Loop ----
-for(j in 1:length(Site_List)){
+
+#Define Gage Sites and Quantiles to Work On----
+Site_List <- c("01589025","01589035")
+Quantiles <- c(0.3,0.5,0.7,0.8,0.85,0.9,0.92,0.94,0.96,0.97,0.98,0.99,0.9975)
+
+#Import data from NWIS and save to disk
+system.time(read_sites(Site_List))
+
+#Read local data
+NWISDir <- paste0("./NWIS_pulls/")
+daily <- fread(paste0(NWISDir,"daily.csv"), stringsAsFactors = F , colClasses=c("character","character","Date","numeric","character"))
+daily$Date <- as.Date(daily$Date)
+uvdata <- fread(paste0(NWISDir,"uvdata.csv"))
+sitedata <- fread(paste0(NWISDir,"sitedata.csv"))
+
+#Plot daily data
+Plot_DV(Site_List[[1]])
   
-  #Create Site Folder Definitions and Folders
-  
-  Current_Site<-Site_List[j]
-  print(paste0("Starting Gage #",Current_Site, "; Site ",j," of ", length(Site_List)))
-  subDir <- paste0("Output_Gage_",Current_Site)
-  finalDir <- paste0(exportDir,subDir) %>%
-    dir_create(finalDir) #Create data directory
-  
-  #Identify fiels to import
-  file.list<-list.files(readDir)
-  Current_Site_Files<-subset(file.list, regexpr(paste0("@",Current_Site),file.list)>0&regexpr("EntireRecord.csv",file.list)>0)
-  
-  #Importing dvQ, uvQ, and uvS
-  Path<-subset(Current_Site_Files, regexpr("Discharge",Current_Site_Files)>0&regexpr("Mean",Current_Site_Files)>0)
-  DV_MEAN <- fread(paste0(readDir,Path),skip=14)
-  
-  Path<-subset(Current_Site_Files, regexpr("Discharge",Current_Site_Files)>0&regexpr("Mean",Current_Site_Files)<0)
-  UV_DISCHARGE <- fread(paste0(readDir,Path),skip=14)
-  
-  Path<-subset(Current_Site_Files, regexpr("Gage_height",Current_Site_Files)>0)
-  UV_STAGE <- fread(paste0(readDir,Path),skip=14)
-  
-  
-  #Merging uv data 
-  Combined_Q_S <- merge(UV_DISCHARGE,UV_STAGE, by="ISO 8601 UTC", all=FALSE) 
-  
-  #Data Cleanup
-  rm(UV_DISCHARGE,UV_STAGE,Path) 
-  
-  colnames(DV_MEAN)[which(colnames(DV_MEAN) == paste0("Value"))] <- 'Q'
-  #colnames(DV_MEAN)[which(colnames(DV_MEAN) == paste0(timestamp))] <- 'date.time'
-  #DV_MEAN$date.time = substr(DV_MEAN[,2],1,nchar(DV_MEAN[,2])-4)
-  
-  DV_MEAN$date<-DV_MEAN[,2]
-  DV_MEAN$date<-as.Date(DV_MEAN$date,  format="%Y-%m-%d")
-  
-  
-  colnames(Combined_Q_S)[which(colnames(Combined_Q_S) == paste0("Value.x"))] <- 'Q'
-  colnames(Combined_Q_S)[which(colnames(Combined_Q_S) == paste0("Value.y"))] <- 'S'
-  
-  Combined_Q_S$date.time<-Combined_Q_S[,2]
-  Combined_Q_S$date.time<-as.POSIXct(Combined_Q_S$date.time, tz=tz, format="%Y-%m-%d %H:%M:%S")
-  
-  
-  DV_MEAN$Q[DV_MEAN$Q==-123456E20] <- NA
-  DV_MEAN$Q[DV_MEAN$Q==-1.23456e+25] <- NA
-  Combined_Q_S$Q[Combined_Q_S$Q==-1.23456E25] <- NA
-  Combined_Q_S$S[Combined_Q_S$S==-1.23456E25] <- NA
-  Combined_Q_S$S[Combined_Q_S$S>100] <- NA
-  
-  #Stage/Quantile Loop----
-  print(paste0("Starting Quantile Selection"))
-  
-  quantiles<-quantile(DV_MEAN$Q,probs=quantile_selection,na.rm=TRUE)
-  quantiles<-t(as.matrix(quantiles))
-  
-  rownames(quantiles)<-"cfs"
-  
-  for(i in 1:(ncol(quantiles))) {
-    Discharge<-quantiles[i]
-    x1<-Combined_Q_S$Q
-    Combined_Q_S$x2<-Discharge
-    x2<-Combined_Q_S$x2
-    # Find points where x1 is above x2.
-    above<-x1>x2
-    print(paste0("Points Above Target Discharge: Mean Daily Quantile ", colnames(quantiles)[i]))
-    table(above)
-    # Points always intersect when above=TRUE, then FALSE or reverse
-    intersect.points<-which(diff(above)!=0)
-    # Find the slopes for each line segment.
-    x1.slopes<-x1[intersect.points+1]-x1[intersect.points]
-    x2.slopes<-x2[intersect.points+1]-x2[intersect.points]
-    # Find the intersection for each segment.
-    x.points<-intersect.points + ((x2[intersect.points] - x1[intersect.points]) / (x1.slopes-x2.slopes))
-    y.points<-x1[intersect.points] + (x1.slopes*(x.points-intersect.points))
-    # Plot.
-    #plot(x1,type='l')
-    #lines(x2,type='l',col='red')
-    #points(x.points,y.points,col='blue')
-    #X1 is the estimated index number whenever discharge is x2
-    Interceptx2<-Combined_Q_S[x.points,]
-    #plot(Interceptx2$date, Interceptx2$U03223425.00060)
-    #fit<-lm(H_S~datetime, data=Interceptx2)
-    #summary(fit)
-    d.frame<-subset(Interceptx2,Q>(Discharge*(1-sensitivity))&Q<(Discharge*(1+sensitivity)))
-    df.names <- assign(paste("Run", i,sep=""),d.frame)
-  }
-  
-  #Prepare Data
-  Run.names<-paste0("Run",(1:ncol(quantiles)))
-  Runs.nos<-list(mget((Run.names)))
-  All.Runs <- melt((Runs.nos), id.vars = c("date.time"),measure.vars = c("Q","S"))
-  
+SS_results <- SS(Site_List[[1]], Quantiles)
+
+
+
   #DV Hydrograph Plot----
-  Plot1<-(ggplot(data=subset(DV_MEAN,Q>0), aes(x=date, y=Q))+
-            ggtitle(paste0("Mean Daily Hydrograph at USGS Gage #", Current_Site))+
+  Plot1<-(ggplot(data=subset(daily,Flow>0), aes(x=Date, y=Flow))+
+            ggtitle(paste0("Mean Daily Hydrograph at USGS Gage #", Site), subtitle = subset(sitedata, site_no == Site)$station_nm)+
             theme_ss()+
             geom_line(alpha=0.5)+
             ylab("Mean Daily Discharge (cfs)"))
@@ -292,12 +215,12 @@ for(j in 1:length(Site_List)){
   
   #Discharge QA Plot----
   print("Plotting Discharge QA Plot")
-  Plot0<-ggplot(data=subset(All.Runs,variable=="Q"), aes(x=date.time,y=value,color=as.factor(L2)))+
+  Plot0<-ggplot(data = SS_results, aes(x=dateTime, y=GH_Inst,color=as.factor(i)))+
     geom_point(alpha=0.5)+
     theme_ss()+
-    ggtitle(paste0("Discharge Quantiles at USGS Gage #", Current_Site))+
+    ggtitle(paste0("Discharge QUantiles at USGS Gage #", Site), subtitle = subset(sitedata, site_no == Site)$station_nm)+
     guides(colour = guide_legend(override.aes = list(alpha = 1)))+
-    scale_color_discrete(name="Discharge\nQuantile",breaks=rev(Run.names),labels=rev(paste(colnames(quantiles),":",round(quantiles,0)," cfs")))+
+   # scale_color_discrete(name="Discharge\nQuantile",breaks=rev(i),labels=rev(paste((quantiles),":",round(quantiles,0)," cfs")))+
     scale_x_datetime(date_labels = "%b\n%Y")+
     ylab("UV Discharge (cfs)")
   #print(Plot0)
