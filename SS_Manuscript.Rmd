@@ -1,0 +1,27 @@
+---
+title: "Patapsco Gage/Sediment analysis"
+author: "Matthew J Cashman"
+date: "September 30, 2018"
+output: html_notebook
+---
+
+This code is the draft notebook, and framework for the manuscript for the Patapsco River dam removal projects. 
+
+```{r Load Required Packages}
+if (!require("pacman")) install.packages("pacman"); library(pacman)
+p_load(tidyverse, dataRetrieval, data.table, microbenchmark,fasttime)
+```
+```{r}
+type<- local
+if{}
+```
+
+```{r}
+Site <- "01589035"
+startDate <- ""
+endDate <- ""
+parameterCd <- "00060"
+
+```
+
+
