@@ -9,19 +9,44 @@ This code is the draft notebook, and framework for the manuscript for the Pataps
 
 ```{r Load Required Packages}
 if (!require("pacman")) install.packages("pacman"); library(pacman)
-p_load(tidyverse, dataRetrieval, data.table, microbenchmark,fasttime)
+p_load(tidyverse, dataRetrieval, data.table, microbenchmark,fasttime, leaflet)
 ```
 ```{r}
 type<- local
-if{}
 ```
 
-```{r}
-Site <- "01589035"
+Define parameters for load for uv data
+```{r Retrieve gage site information from NWIS}
+Sites <- c("01589000","01589025","01589035")
+SiteInfo<-readNWISsite(Sites)
+SiteInfo
+```
+Plot locations in leaflet
+```{r Plot locations on map}
+leaflet(data = SiteInfo) %>% addTiles() %>%
+  addMarkers(~dec_long_va, ~dec_lat_va, popup = ~as.character(paste0(site_no, ": ", station_nm)), label = ~as.character(paste0(site_no, ": ", station_nm)))
+```
+
+Let's figure out what data is available at these 3 gage locations
+```{r WhatData}
+whatNWISdata(siteNumber=Sites, service=c("uv","dv"),statCd = "00003") %>%
+  select(agency_cd,site_no,station_nm,parm_cd,stat_cd,begin_date,end_date,count_nu)
+```
+
+Define parameters for load for dv data
+```{r dataRetrieval Settings for dv data}
+Sites <- c("01589000","01589025","01589035")
+readNWISsite(Sites)
 startDate <- ""
 endDate <- ""
-parameterCd <- "00060"
+parameterCd <- c("00060","00065")
 
 ```
-
+Define parameters for load for uv data
+```{r dataRetrieval Settings}
+Site <- c("01589000","01589025","01589035")
+startDate <- ""
+endDate <- ""
+parameterCd <- c("00060","00065")
+```
 

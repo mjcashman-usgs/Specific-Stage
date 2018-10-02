@@ -249,7 +249,7 @@ target_plot<-ggplot(data=subset(SS_results_clean,i==v), aes(x=dateTime,y=GH_Inst
   scale_x_datetime(date_labels = "%b\n%Y",date_breaks = "1 year")+
   ylab(paste("Stage (ft)"))+
   #geom_smooth(method="gam",alpha=0.5,se=FALSE)
-  geom_smooth(alpha=0.05,se=FALSE)+
+  geom_smooth(alpha=0.05s,nate=FALSE)+
   theme(axis.title.x=element_blank())
 print(target_plot)
 }
