@@ -2,13 +2,15 @@
 title: "Specific Stage Analysis"
 author: "Matthew J Cashman"
 date: "September 30, 2018"
-output: html_document
-toc: true
-toc_depth: 2
-toc_float: true
-  
+output: 
+  html_document:
+  toc: true
+  toc_float: true
+  theme: united
+  highlight: tango
 ---
 
+# Pre-analysis
 ## Parameter selection
 Before we begin with our specific stage analysis, there are several settings that we will have to define first. 1. Site  - USGS site number to do the analysis on. 2. startDate - Beginning of the period of interest, if available. Blank will pull from the earliest record. 3. endDate - End of the period of interest. Blank will pull from the latest record. 4. Quantiles - Mean daily flow quantiles, in decimal form, for the analysis. e.g. 0.8 is the 80% of mean daily flow, or 20% exceedance.5. Sensitivity - Used in the clean up procedure. Will reject any values outside of discharge quantile equation: $+/-$ sensitivity, in percent 6. target - Target quantile of interest, used to create single, focused output graphs 
 
@@ -16,7 +18,7 @@ Before we begin with our specific stage analysis, there are several settings tha
 Site <- "01589035"
 startDate <- ""
 endDate <- ""
-Quantiles <- c(0.3,0.5,0.7,0.8,0.85,0.9,0.95,0.98,0.99,0.9975,0.999,0.9999)
+Quantiles <- c(0.3,0.5,0.7,0.8,0.85,0.9,0.95,0.98,0.99,0.9975,0.999,0.9999,0.9999999)
 Sensitivity <- 0.01
 target <- 8
 ```
@@ -144,16 +146,19 @@ SS <- function(Site, Quantiles) {
 }
 
 ```
+
 ##Load NWIS data
-Here we are loading data that has been loaded locally. Options exist to pull directly from NWIS using the dataRetrieval package. Error values or missing data (values of -999999) are excluded at this point.
+Here we are loading data that has been loaded locally. Options exist to pull directly from NWIS using the dataRetrieval package. Error values or missing data (e.g. values of -999999) are excluded at this point.
 ```{r Import/Read Data, echo = FALSE}
  #import_sites(Site, startDate, endDate)
  #write_sites(Site)
   #OR#
   read_local()
 ```
+
 ##Plot NWIS data
 After our data has been downloaded, we will plot mean daily discharge, instantaneous unit discharge, and instantaneous unit stage to check for any gaps or weird values. 
+
 ```{r Plot Loaded DV/UV Data, echo = FALSE}
 #Plot daily data
 ggplot(data=subset(daily), aes(x=Date, y=Flow))+
@@ -177,13 +182,16 @@ ggplot(data=subset(uvdata), aes(x=dateTime, y=GH_Inst))+
 
 ```
 
-##Run Specific Stage Analysis
+#Specific Stage Analysis
+##Run the Analysis
 ```{r Run Specific Stage Analysis}
 #Run Specific Stage Analysis ----
 SS_results <- SS(Site, Quantiles)
 ```
+
 ##Cleanup
-Now we check results for stage and discharge to make sure there are no outliers
+Now we check results for stage and discharge to make sure there are no outliers. In the figure below, we can see some scatter around our target discharge quantiles.
+
 ```{r Plot Check for Outliers, echo=FALSE}
 ggplot(data = SS_results, aes(x=dateTime, y=Flow_Inst, color=as.factor(i)))+
   geom_point(alpha=0.5)+
@@ -203,6 +211,7 @@ SS_results_clean <- SS_results %>%
 
 ```
 
+## Post-outlier Check
 Now we check results again to make sure all outliers have been removed.
 ```{r Plot Cleaned results, echo=FALSE, message=FALSE,warning=FALSE}
 ggplot(data = SS_results_clean, aes(x=dateTime, y=Flow_Inst,color=as.factor(i)))+
@@ -214,11 +223,12 @@ ggplot(data = SS_results_clean, aes(x=dateTime, y=Flow_Inst,color=as.factor(i)))
   scale_x_datetime(date_labels = "%b\n%Y")+
   ylab("UV Discharge (cfs)")
 ```
-## Specific Stage Result Plots
+
+#Specific Stage Result Plots
 
 Now that outliers have been removed, we can print all our results. First in one plot for all quantiles. Next are individual plots for all target quantiles
 
-### All Quantiles Plot
+## All Quantiles Plot
 ```{r, echo=FALSE,message=FALSE}
 #Plot Specific Stage Results for All Quantiles
 ggplot(data=subset(SS_results_clean), aes(x=dateTime,y=GH_Inst,color=as.factor(i)))+
@@ -231,11 +241,12 @@ ggplot(data=subset(SS_results_clean), aes(x=dateTime,y=GH_Inst,color=as.factor(i
   scale_x_datetime(date_labels = "%b\n%Y",date_breaks = "1 year")+
   ylab("Stage (ft)")+
   #geom_smooth(method="gam",alpha=0.5,se=FALSE)
-  geom_smooth(alpha=0.05,span=0.3,se=FALSE)+
+  geom_smooth(alpha=0.05,se=FALSE)+
   theme(axis.title.x=element_blank())
 ```
-### Target Quantile Plot
-```{r, echo=FALSE, message=FALSE}
+
+## Target Quantile Plots
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
 
 for (v in seq(Quantiles)){
 target_plot<-ggplot(data=subset(SS_results_clean,i==v), aes(x=dateTime,y=GH_Inst))+
@@ -249,9 +260,39 @@ target_plot<-ggplot(data=subset(SS_results_clean,i==v), aes(x=dateTime,y=GH_Inst
   scale_x_datetime(date_labels = "%b\n%Y",date_breaks = "1 year")+
   ylab(paste("Stage (ft)"))+
   #geom_smooth(method="gam",alpha=0.5,se=FALSE)
-  geom_smooth(alpha=0.05s,nate=FALSE)+
+  geom_smooth(alpha=0.05)+
   theme(axis.title.x=element_blank())
 print(target_plot)
 }
 ```
 
+# Let's explore site measurements
+
+##Download site measurement data
+```{r Download rating curve data}
+readNWISrating(siteNumber= Site, "exsa")
+```
+
+```{r Download site measurement data}
+meas<-readNWISmeas(siteNumber = Site) %>%
+  select(party_nm,gage_height_va,discharge_va,gage_va_change,gage_va_time,discharge_cd,measurement_dateTime,tz_cd)
+print(meas)
+```
+
+
+```{r Plot measurement data for both stage and Q}
+#Plot unit value discharge & stage
+ggplot(data=subset(uvdata), aes(x=dateTime, y=Flow_Inst))+
+    ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Measurements on Instantaneous Unit Q")+
+    theme_ss(14,"sans")+
+    geom_line(alpha=0.8)+
+    ylab("Instantaneous Discharge (cfs)")+
+   geom_point(data=meas, aes(x=measurement_dateTime, y=discharge_va), color="red")
+
+ggplot(data=subset(uvdata), aes(x=dateTime, y=GH_Inst))+
+  ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Instantaneous Unit Value Stage")+
+  theme_ss(14,"sans")+
+    geom_line(alpha=0.8)+
+    ylab("Gage Height (ft)")+
+     geom_point(data=meas, aes(x=measurement_dateTime, y=gage_height_va), color="red")
+```
