@@ -2,17 +2,18 @@
 title: "Specific Stage Analysis"
 author: "Matthew J Cashman"
 date: "September 30, 2018"
-output: 
-  html_document:
-  toc: true
-  toc_float: true
-  theme: united
+output:
+  html_document: null
+  pdf_document: default
   highlight: tango
+  theme: united
+  toc: yes
+  toc_float: yes
 ---
 
 # Pre-analysis
 ## Parameter selection
-Before we begin with our specific stage analysis, there are several settings that we will have to define first. 1. Site  - USGS site number to do the analysis on. 2. startDate - Beginning of the period of interest, if available. Blank will pull from the earliest record. 3. endDate - End of the period of interest. Blank will pull from the latest record. 4. Quantiles - Mean daily flow quantiles, in decimal form, for the analysis. e.g. 0.8 is the 80% of mean daily flow, or 20% exceedance.5. Sensitivity - Used in the clean up procedure. Will reject any values outside of discharge quantile equation: $+/-$ sensitivity, in percent 6. target - Target quantile of interest, used to create single, focused output graphs 
+Before we begin with our specific stage analysis, there are several settings that we will have to define first. 1. Site  - USGS site number to do the analysis on. 2. startDate - Beginning of the period of interest, if available. Blank will pull from the earliest record. 3. endDate - End of the period of interest. Blank will pull from the latest record. 4. Quantiles - Mean daily flow quantiles, in decimal form, for the analysis. e.g. 0.8 is the 80% of mean daily flow, or 20% exceedance.5. Sensitivity - Used in the clean up procedure. Will reject any values outside of discharge quantile equation: +/- sensitivity, in percent 6. target - Target quantile of interest, used to create single, focused output graphs 
 
 ``` {r}
 Site <- "01589035"
@@ -157,9 +158,12 @@ Here we are loading data that has been loaded locally. Options exist to pull dir
 ```
 
 ##Plot NWIS data
-After our data has been downloaded, we will plot mean daily discharge, instantaneous unit discharge, and instantaneous unit stage to check for any gaps or weird values. 
+After our data has been downloaded, we will plot mean daily discharge, instantaneous unit discharge, and instantaneous unit stage to check for any gaps or weird values. Directly measured values are indicated by red points.
 
 ```{r Plot Loaded DV/UV Data, echo = FALSE}
+meas<-readNWISmeas(siteNumber = Site) %>%
+  select(party_nm,gage_height_va,discharge_va,gage_va_change,gage_va_time,discharge_cd,measurement_dateTime,tz_cd)
+
 #Plot daily data
 ggplot(data=subset(daily), aes(x=Date, y=Flow))+
     ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Mean Daily Hydrograph")+
@@ -172,13 +176,16 @@ ggplot(data=subset(uvdata), aes(x=dateTime, y=Flow_Inst))+
     ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Instantaneous Unit Value Hydrograph")+
     theme_ss(14,"sans")+
     geom_line(alpha=0.8)+
-    ylab("Instantaneous Discharge (cfs)")
+    ylab("Instantaneous Discharge (cfs)")+
+     geom_point(data=meas, aes(x=measurement_dateTime, y=discharge_va), color="red")
+
 
 ggplot(data=subset(uvdata), aes(x=dateTime, y=GH_Inst))+
   ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Instantaneous Unit Value Stage")+
   theme_ss(14,"sans")+
     geom_line(alpha=0.8)+
-    ylab("Gage Height (ft)")
+    ylab("Gage Height (ft)")+
+     geom_point(data=meas, aes(x=measurement_dateTime, y=gage_height_va), color="red")
 
 ```
 
@@ -197,7 +204,7 @@ ggplot(data = SS_results, aes(x=dateTime, y=Flow_Inst, color=as.factor(i)))+
   geom_point(alpha=0.5)+
   theme_ss(14, "sans")+
   ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Discharge Quantiles Check")+
-  guides(colour = guide_legend(override.aes = list(alpha = 1)))+
+  guides(colour = guide_legend(override.aes = list(alpha = 1),reverse=TRUE))+
   scale_color_discrete(name="Discharge\nQuantile", breaks = unique(SS_results$i), labels=(paste(colnames(quantiles),":",round(quantiles,0)," cfs")))+
   scale_x_datetime(date_labels = "%b\n%Y")+
   ylab("UV Discharge (cfs)")
@@ -218,8 +225,8 @@ ggplot(data = SS_results_clean, aes(x=dateTime, y=Flow_Inst,color=as.factor(i)))
   geom_point(alpha=0.5)+
   theme_ss(14, "sans")+
   ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Discharge Quantiles Check - Cleaned")+
-  guides(colour = guide_legend(override.aes = list(alpha = 1)))+
-  scale_color_discrete(name="Daily Discharge Quantile", breaks = unique(SS_results$i), labels=paste(Quantiles*100,"% - ",round(quantiles,0)," cfs"))+
+  guides(colour = guide_legend(override.aes = list(alpha = 1),reverse=TRUE))+
+  scale_color_discrete(name="Daily Discharge Quantile", breaks = unique(SS_results$i),   labels=paste(Quantiles*100,"% - ",round(quantiles,0)," cfs"))+
   scale_x_datetime(date_labels = "%b\n%Y")+
   ylab("UV Discharge (cfs)")
 ```
@@ -229,7 +236,7 @@ ggplot(data = SS_results_clean, aes(x=dateTime, y=Flow_Inst,color=as.factor(i)))
 Now that outliers have been removed, we can print all our results. First in one plot for all quantiles. Next are individual plots for all target quantiles
 
 ## All Quantiles Plot
-```{r, echo=FALSE,message=FALSE}
+```{r, echo=FALSE,message=FALSE, fig.height=8, fig.width=12}
 #Plot Specific Stage Results for All Quantiles
 ggplot(data=subset(SS_results_clean), aes(x=dateTime,y=GH_Inst,color=as.factor(i)))+
   geom_point(alpha=0.3)+
@@ -242,11 +249,15 @@ ggplot(data=subset(SS_results_clean), aes(x=dateTime,y=GH_Inst,color=as.factor(i
   ylab("Stage (ft)")+
   #geom_smooth(method="gam",alpha=0.5,se=FALSE)
   geom_smooth(alpha=0.05,se=FALSE)+
+  geom_vline(xintercept=as.numeric(as.POSIXct("2010-10-01")), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct("2018-9-11")), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct("2018-5-27")), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct("2016-7-30")), linetype=2)+
   theme(axis.title.x=element_blank())
 ```
 
 ## Target Quantile Plots
-```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE, fig.height=3, fig.width=5}
 
 for (v in seq(Quantiles)){
 target_plot<-ggplot(data=subset(SS_results_clean,i==v), aes(x=dateTime,y=GH_Inst))+
@@ -255,12 +266,15 @@ target_plot<-ggplot(data=subset(SS_results_clean,i==v), aes(x=dateTime,y=GH_Inst
           subtitle = paste("Specific Stage at", round(quantiles[[v]],2), " cfs, ", Quantiles[v]*100,"% of mean daily flow"))+
   theme_ss(14, "sans")+
   scale_color_discrete(name="Discharge\nQuantile", breaks = unique(SS_results$i), labels=paste(Quantiles*100,"% - ",round(quantiles,0)," cfs"))+
-  scale_x_datetime(date_labels = "%b\n%Y")+
   guides(colour = guide_legend(reverse=TRUE))+
   scale_x_datetime(date_labels = "%b\n%Y",date_breaks = "1 year")+
   ylab(paste("Stage (ft)"))+
   #geom_smooth(method="gam",alpha=0.5,se=FALSE)
   geom_smooth(alpha=0.05)+
+  geom_vline(xintercept=as.numeric(as.POSIXct("2010-10-01")), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct("2018-9-11")), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct("2018-5-27")), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct("2016-7-30")), linetype=2)+
   theme(axis.title.x=element_blank())
 print(target_plot)
 }
@@ -270,29 +284,8 @@ print(target_plot)
 
 ##Download site measurement data
 ```{r Download rating curve data}
-readNWISrating(siteNumber= Site, "exsa")
+rating<-readNWISrating(siteNumber= Site, "exsa")
+head(rating)
+tail(rating)
 ```
 
-```{r Download site measurement data}
-meas<-readNWISmeas(siteNumber = Site) %>%
-  select(party_nm,gage_height_va,discharge_va,gage_va_change,gage_va_time,discharge_cd,measurement_dateTime,tz_cd)
-print(meas)
-```
-
-
-```{r Plot measurement data for both stage and Q}
-#Plot unit value discharge & stage
-ggplot(data=subset(uvdata), aes(x=dateTime, y=Flow_Inst))+
-    ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Measurements on Instantaneous Unit Q")+
-    theme_ss(14,"sans")+
-    geom_line(alpha=0.8)+
-    ylab("Instantaneous Discharge (cfs)")+
-   geom_point(data=meas, aes(x=measurement_dateTime, y=discharge_va), color="red")
-
-ggplot(data=subset(uvdata), aes(x=dateTime, y=GH_Inst))+
-  ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Instantaneous Unit Value Stage")+
-  theme_ss(14,"sans")+
-    geom_line(alpha=0.8)+
-    ylab("Gage Height (ft)")+
-     geom_point(data=meas, aes(x=measurement_dateTime, y=gage_height_va), color="red")
-```
