@@ -2,51 +2,313 @@
 title: "Patapsco Gage/Sediment analysis"
 author: "Matthew J Cashman"
 date: "September 30, 2018"
-output: html_notebook
+output:
+  html_notebook: 
+    toc: yes
+  html_document:
+    df_print: paged
 ---
 
 This code is the draft notebook, and framework for the manuscript for the Patapsco River dam removal projects. 
 
-```{r Load Required Packages}
+
+# Project Prep
+
+## Load packages
+```{r Load Required Packages, echo=TRUE, message=TRUE, warning=TRUE, paged.print=TRUE}
 if (!require("pacman")) install.packages("pacman"); library(pacman)
-p_load(tidyverse, dataRetrieval, data.table, microbenchmark,fasttime, leaflet)
-```
-```{r}
-type<- local
+p_load(tidyverse, dataRetrieval, data.table, microbenchmark,fasttime, leaflet, sp, fs, gridExtra)
+if (!require("hydroMap")) install.packages("hydroMap",     repos = c("http://owi.usgs.gov/R", "http://cran.us.r-project.org")); library(hydroMap)
 ```
 
-Define parameters for load for uv data
+## Define Sites
 ```{r Retrieve gage site information from NWIS}
 Sites <- c("01589000","01589025","01589035")
-SiteInfo<-readNWISsite(Sites)
-SiteInfo
 ```
-Plot locations in leaflet
-```{r Plot locations on map}
+
+## Plot locations in leaflet
+```{r}
+SiteInfo<-readNWISsite(Sites)
 leaflet(data = SiteInfo) %>% addTiles() %>%
-  addMarkers(~dec_long_va, ~dec_lat_va, popup = ~as.character(paste0(site_no, ": ", station_nm)), label = ~as.character(paste0(site_no, ": ", station_nm)))
+  addCircleMarkers(~dec_long_va, ~dec_lat_va, color="black", radius=8, popup = ~as.character(paste0(site_no, ": ", station_nm)), label = ~as.character(paste0(site_no, ": ", station_nm)))
 ```
 
 Let's figure out what data is available at these 3 gage locations
 ```{r WhatData}
 whatNWISdata(siteNumber=Sites, service=c("uv","dv"),statCd = "00003") %>%
-  select(agency_cd,site_no,station_nm,parm_cd,stat_cd,begin_date,end_date,count_nu)
+  select(agency_cd,site_no,station_nm,parm_cd,stat_cd,begin_date,end_date,count_nu) %>%
+  arrange(parm_cd, stat_cd) 
 ```
 
-Define parameters for load for dv data
-```{r dataRetrieval Settings for dv data}
+Define parameters for load for dv data.
+* 00060 - Discharge
+* 00065 - Gage height
+* 63680 - Turbidity
+* 80154 - SSC
+* 80155 - SSQ
+
+```{r dataRetrieval Settings}
 Sites <- c("01589000","01589025","01589035")
 readNWISsite(Sites)
 startDate <- ""
 endDate <- ""
-parameterCd <- c("00060","00065")
+par <- c("00060","00065", "63680", "80154", "80155")
 
 ```
 Define parameters for load for uv data
-```{r dataRetrieval Settings}
-Site <- c("01589000","01589025","01589035")
-startDate <- ""
-endDate <- ""
-parameterCd <- c("00060","00065")
+```{r instant dataRetrieval Settings}
+uv_data <- readNWISuv(siteNumbers = Sites,
+            parameterCd = par,
+            startDate = "",
+            endDate = "",
+            tz = "America/New_York") %>% renameNWISColumns() %>% 
+            filter(Flow_Inst!=-999999) %>%
+            filter(GH_Inst!=-999999)
+```
+
+```{r daily dataRetrieval Settings}
+dv_data <- readNWISdv(siteNumbers = Sites,
+            parameterCd = par,
+            startDate = "",
+            endDate = "") %>% renameNWISColumns()%>% 
+            filter(Turb!=-999999) %>%
+            filter(Flow!=-999999)
+```
+```{r Generate DV Cumulative Plots}
+data<-dv_data %>%
+  select(Date, site_no,Flow,Turb) %>%
+    na.omit() %>% group_by(site_no) %>% mutate(cumQ=cumsum(Flow),cumT=cumsum(Turb))
+  
+ggplot(data, aes(x=cumQ, y=cumT, group=site_no, color=site_no))+
+  geom_path(size=2)+
+  scale_color_viridis_d()
+```
+
+```{r Generate DV transport plots}
+data<-dv_data %>%
+  select(Date, site_no,Flow,Turb) %>%
+    na.omit() %>% group_by(site_no) %>% mutate(cumQ=cumsum(Flow),cumT=cumsum(Turb)) %>%
+  filter(Date < "2014-1-1") %>%
+  separate(Date, by="-", into = c("Year","Month","Day")) %>%
+  unite(MonthYear,Year,Month,sep=".") 
+
+  ggplot(data, aes(x=log(Flow), y=log(Turb), group=site_no, color=site_no))+
+  geom_point(size=1.5, alpha=0.5)+
+  facet_wrap(~MonthYear)+
+  scale_color_viridis_d()+
+  geom_smooth(method="lm", se=TRUE)
+
+```
+
+```{r Identify when storms occurred}
+dv_data %>%
+  select(Date, site_no,Flow,Turb) %>%
+    na.omit() %>% group_by(site_no) %>% mutate(cumQ=cumsum(Flow),cumT=cumsum(Turb)) %>%
+  filter(Date < "2013-1-1") %>%
+ # separate(Date, by="-", into = c("Year","Month","Day")) %>%
+  #unite(MonthYear,Year,Month,sep=".") %>%
+  ggplot(aes(x=Date, y=Flow, group=site_no, color=site_no))+
+  geom_line(size=1.5, alpha=0.5)+
+  scale_color_viridis_d()+
+  geom_smooth(span=0.03, SE=FALSE)
+```
+
+```{r Storm picker smoothing algorithm}
+argmax <- function(x, y, w=1, ...) {
+  require(zoo)
+  n <- length(y)
+  y.smooth <- loess(y ~ x, ...)$fitted
+  y.max <- rollapply(zoo(y.smooth), 2*w+1, max, align="center")
+  delta <- y.max - y.smooth[-c(1:w, n+1-1:w)]
+  i.max <- which(delta <= 0) + w
+  list(x=x[i.max], i=i.max, y.hat=y.smooth)
+}
+test <- function(w, span) {
+  peaks <- argmax(x, y, w=w, span=span)
+
+  plot(x, y, cex=0.75, col="Gray", main=paste("w = ", w, ", span = ", span, sep=""))
+  lines(x, peaks$y.hat,  lwd=2) #$
+  y.min <- min(y)
+  points(x[peaks$i], peaks$y.hat[peaks$i], col="Red", pch=19, cex=1.25)
+}
+library(tidyverse)
+data <- dv_data %>%
+  select(Date, site_no,Flow,Turb) %>%
+    na.omit() %>% group_by(site_no) %>% mutate(cumQ=cumsum(Flow),cumT=cumsum(Turb)) %>%
+  filter(Date < "2017-1-1") %>% filter(site_no=="01589035")
+x <- as.numeric(data$Date)
+y <- log(data$Flow)
+par(mfrow=c(4,1))
+plot(x,y)
+lines(x,y)
+test(1, 0.002)
+test(1, 0.005)
+test(2, 0.02)
+length(x)
+peaks <- argmax(x, y, w=1, span=0.005)
+length(peaks$x)
+```
+
+```{r Plotting hysteresis of storm, fig.height=4, fig.width=8}
+peak.no <- 2
+peak_date <- data %>%
+  filter(Date %in% as.Date(peaks$x))
+target_peak_long<-format(peak_date[[1]][[peak.no]], format="%B %d, %Y")
+target_peak<-peak_date[[1]][[peak.no]]
+target_peak
+
+storm_uv<-uv_data %>%
+  #filter(site_no==site) %>%
+  filter(dateTime > target_peak-2 & dateTime < target_peak+2)
+
+temp <- storm_uv %>%
+  filter(site_no=="01589035") 
+min <- min(temp$dateTime)
+mean <- mean(temp$dateTime)
+max <- max(temp$dateTime)
+storm_uv$dateTime
+storm_uv %>%
+  gather(variable, value, c(Flow_Inst,Turb_Inst)) %>%
+  #filter(site_no==site) %>%
+  ggplot(aes(x=dateTime, y= value, color=as.numeric(dateTime)))+
+  geom_path(size=1)+
+  facet_grid(variable~site_no, scales = "free_y")+
+  scale_color_viridis_c(name="Date and Time",breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
+  ggtitle(paste0("Hydrograph for storm #:",peak.no,"   ", target_peak_long))
+
+```
+
+```{r Storm specific Hysterists loop, fig.height=4, fig.width=12}
+storm_uv %>%
+  ggplot(aes(x=Flow_Inst, y=Turb_Inst,color=as.numeric(dateTime)))+
+  geom_path(size=2)+
+  facet_wrap(~site_no)+
+  scale_color_viridis_c(name="Date and Time", breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
+  ggtitle(paste0("Hysteresis loops for storm #:",peak.no,"   ", target_peak))
+```
+
+```{r Loop plot to save all hysteresis results}
+for (i in seq(peaks$x)){
+tryCatch({
+ peak.no <- i
+peak_date <- data %>%
+  filter(Date %in% as.Date(peaks$x))
+target_peak_long<-format(peak_date[[1]][[peak.no]], format="%B %d, %Y")
+target_peak<-peak_date[[1]][[peak.no]]
+target_peak
+writeDir <- paste0("./Patapsco_Hysteresis/")
+dir_create(writeDir) #Create Export directory
+
+storm_uv<-uv_data %>%
+  #filter(site_no==site) %>%
+  filter(dateTime > target_peak-2 & dateTime < target_peak+2)
+
+temp <- storm_uv %>%
+  filter(site_no=="01589035") 
+min <- min(temp$dateTime)
+mean <- mean(temp$dateTime)
+max <- max(temp$dateTime)
+storm_uv$dateTime
+
+storm_uv %>%
+  gather(variable, value, c(Flow_Inst,Turb_Inst)) %>%
+  #filter(site_no==site) %>%
+  ggplot(aes(x=dateTime, y= value, color=as.numeric(dateTime)))+
+  geom_path(size=1)+
+  facet_grid(variable~site_no, scales = "free_y")+
+  theme_bw()+
+  scale_color_viridis_c(name="Date and Time",breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
+  ggtitle(paste0("Hydrograph for storm #:",peak.no,"   ", target_peak_long))
+ggsave(paste0(writeDir,"Storm-",i," Hydrograph.png"),width=9,height=6)
+
+storm_uv %>%
+  ggplot(aes(x=Flow_Inst, y=Turb_Inst,color=as.numeric(dateTime)))+
+  geom_path(size=2)+
+  theme_bw()+
+  facet_wrap(~site_no)+
+  scale_color_viridis_c(name="Date and Time", breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
+  ggtitle(paste0("Hysteresis loops for storm #:",peak.no,"   ", target_peak))
+ggsave(paste0(writeDir,"Storm-",i," Hysteresis.png"),width=12)
+})
+}
+
+```
+
+```{r Loop plot for all hysteresis results for 1 site, message=FALSE, warning=FALSE}
+site <- "01589025"
+
+seq <- 173:185
+groblength<-1
+plot_list = list()
+for (i in seq){
+peak.no <- i
+
+peak_date <- data %>%
+  filter(Date %in% as.Date(peaks$x))
+
+target_peak<-peak_date[[1]][[peak.no]]
+  
+storm_uv<-uv_data %>%
+  filter(site_no==site) %>%
+  filter(dateTime > target_peak-2 & dateTime < target_peak+2)
+
+temp <- storm_uv %>%
+  filter(site_no=="01589035") 
+min <- min(temp$dateTime)
+mean <- mean(temp$dateTime)
+max <- max(temp$dateTime)
+
+
+name <-paste0("plot",i) 
+plot_list[[groblength]] <- ggplot(storm_uv,aes(x=Flow_Inst, y=Turb_Inst,color=as.numeric(dateTime)))+
+                      geom_path(size=2)+
+                      theme_bw(base_size = 8)+
+                      scale_color_viridis_c(name="Date and Time", breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
+                      ggtitle(paste0("#",peak.no," - ", target_peak))+ guides(color=FALSE)
+groblength <- groblength+1
+}
+
+g<-do.call(arrangeGrob,plot_list)
+
+ggsave(file=paste0(writeDir,"Hysteresis",site,"-", min(seq),"-", max(seq),".png"), g, height=7, width=7) #saves g
+
+```
+```{r tidy attempted remake of above}
+site <- "01589035"
+
+list_data = list()
+
+for (i in seq(peaks$x)){
+peak.no <- i
+peak_date <- data %>%
+  filter(Date %in% as.Date(peaks$x))
+
+target_peak<-peak_date[[1]][[peak.no]]
+  
+storm_uv<-uv_data %>%
+  filter(dateTime > target_peak-2 & dateTime < target_peak+2)
+start<-storm_uv$dateTime[[1]]
+storm_uv<-storm_uv %>% 
+  mutate(timefrom = (dateTime-start))
+storm_uv$i <- i
+storm_uv$storm_id <- paste0("Storm #",peak.no," - ", target_peak)
+list_data[[i]] <- storm_uv
+}
+
+storm_data<-rbindlist(list_data)
+
+storm_data %>%
+  #filter(site_no==site) %>%
+  filter(i>=170 & i <= 186) %>%
+  ggplot(aes(x=Flow_Inst, y=Turb_Inst))+
+    geom_path(size=2, alpha=0.8, aes(color=factor(site_no)))+
+    scale_x_log10()+
+  scale_y_log10()+
+              theme_bw(base_size = 8)+
+                #      scale_color_viridis_d(name="Date and Time", breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
+                      ggtitle(paste0("Hysteresis Grid for USGS Site  ",site))+
+  #guides(color=FALSE)+
+  facet_wrap(~storm_id)
+  
 ```
 
