@@ -17,22 +17,27 @@ This code is the draft notebook, and framework for the manuscript for the Pataps
 ## Load packages
 ```{r Load Required Packages, echo=TRUE, message=TRUE, warning=TRUE, paged.print=TRUE}
 if (!require("pacman")) install.packages("pacman"); library(pacman)
-p_load(tidyverse, dataRetrieval, data.table, microbenchmark,fasttime, leaflet, sp, fs, gridExtra)
-if (!require("hydroMap")) install.packages("hydroMap",     repos = c("http://owi.usgs.gov/R", "http://cran.us.r-project.org")); library(hydroMap)
+p_load(tidyverse, dataRetrieval, data.table, microbenchmark,fasttime, leaflet, sp, fs, gridExtra, rjson)
 ```
 
 ## Define Sites
+Multiple sites can be defined under Sites. Project will be the grouping of sites and name of the export folder. read_NWIS if set to TRUE will pull from NWIS web (this can take 10-15 minutes to important instantaneous data), or if set to FALSE will read in local data that is already retrieved and saved from NWIS. After the first NWIS import, data will be saved locally automatically. 
+
 ```{r Retrieve gage site information from NWIS}
 Sites <- c("01589000","01589025","01589035")
+Project <- "Patapsco"
+read_NWIS <- FALSE
+SiteInfo<-readNWISsite(Sites)
+SiteInfo
 ```
 
 ## Plot locations in leaflet
 ```{r}
-SiteInfo<-readNWISsite(Sites)
 leaflet(data = SiteInfo) %>% addTiles() %>%
   addCircleMarkers(~dec_long_va, ~dec_lat_va, color="black", radius=8, popup = ~as.character(paste0(site_no, ": ", station_nm)), label = ~as.character(paste0(site_no, ": ", station_nm)))
 ```
 
+#Import Gage Data
 Let's figure out what data is available at these 3 gage locations
 ```{r WhatData}
 whatNWISdata(siteNumber=Sites, service=c("uv","dv"),statCd = "00003") %>%
@@ -40,40 +45,59 @@ whatNWISdata(siteNumber=Sites, service=c("uv","dv"),statCd = "00003") %>%
   arrange(parm_cd, stat_cd) 
 ```
 
-Define parameters for load for dv data.
+USGS parameter codes used by NWIS:
 * 00060 - Discharge
 * 00065 - Gage height
 * 63680 - Turbidity
 * 80154 - SSC
 * 80155 - SSQ
 
+We will pull in all data for these parameters for the entire period of record.
 ```{r dataRetrieval Settings}
-Sites <- c("01589000","01589025","01589035")
-readNWISsite(Sites)
-startDate <- ""
-endDate <- ""
+startDate <- "2010-10-01"
+endDate <- "2018-10-01"
 par <- c("00060","00065", "63680", "80154", "80155")
-
 ```
-Define parameters for load for uv data
-```{r instant dataRetrieval Settings}
-uv_data <- readNWISuv(siteNumbers = Sites,
+
+If read_NWIS has been previously set to TRUE, this chunk will pull from NWIS web (this can take 10-15 minutes to important instantaneous data) and save a copy locally for later analysis. If read_NWIS has been set to FALSE, this chunk will read in local data that was already retrieved and saved from NWIS. 
+```{r Load in data from NWIS or locally based on read_NWIS}
+writeDir <<- paste0("./NWIS_pulls/",Project)
+if (read_NWIS == TRUE){
+  message("Reading uv data")
+  uv_data <<- readNWISuv(siteNumbers = Sites,
             parameterCd = par,
             startDate = "",
             endDate = "",
             tz = "America/New_York") %>% renameNWISColumns() %>% 
             filter(Flow_Inst!=-999999) %>%
             filter(GH_Inst!=-999999)
-```
-
-```{r daily dataRetrieval Settings}
-dv_data <- readNWISdv(siteNumbers = Sites,
+  
+  message("Reading dv data")
+  dv_data <<- readNWISdv(siteNumbers = Sites,
             parameterCd = par,
             startDate = "",
             endDate = "") %>% renameNWISColumns()%>% 
             filter(Turb!=-999999) %>%
             filter(Flow!=-999999)
+  message("Wring NWIS data locally for later loads")
+  dir_create(writeDir) #Create Export directory
+  fwrite(dv_data,paste0(writeDir,"/dv_data.csv"))
+  fwrite(uv_data,paste0(writeDir,"/uv_data.csv"))
+  } else if(read_NWIS == FALSE)  {
+  message("read_NWIS is defined to FALSE. Will read local files")
+  message("Reading local Daily Data ")
+    dv_data <- fread(paste0(writeDir,"/dv_data.csv"), colClasses=c(site_no="character"))
+    dv_data$Date <- as.Date(dv_data$Date)
+  message("Reading local Continuous Data")
+    uv_data <- fread(paste0(writeDir,"/uv_data.csv"), colClasses=c(site_no="character"))
+    uv_data$dateTime <- fastPOSIXct(uv_data$dateTime)
+  } else{
+    message("read_NWIS not defined. Data not loaded")
+  }
 ```
+
+#Analysis of time-series records
+Now that we have time-series data loaded into our environment, let's explore what we can see from these datasets.
 ```{r Generate DV Cumulative Plots}
 data<-dv_data %>%
   select(Date, site_no,Flow,Turb) %>%
@@ -81,6 +105,15 @@ data<-dv_data %>%
   
 ggplot(data, aes(x=cumQ, y=cumT, group=site_no, color=site_no))+
   geom_path(size=2)+
+  scale_color_viridis_d()
+```
+
+```{r Generate time-explicit DV cumulative plots}
+data %>%
+  gather(variable, value, c(cumQ,cumT)) %>%
+ggplot(aes(x=Date, y=value, group=site_no, color=site_no))+
+  geom_path(size=2) +
+  facet_wrap(~variable, scales = "free_y") +
   scale_color_viridis_d()
 ```
 
@@ -100,6 +133,7 @@ data<-dv_data %>%
 
 ```
 
+## Storm-by-storm analysis
 ```{r Identify when storms occurred}
 dv_data %>%
   select(Date, site_no,Flow,Turb) %>%
@@ -146,7 +180,7 @@ test(1, 0.005)
 test(2, 0.02)
 length(x)
 peaks <- argmax(x, y, w=1, span=0.005)
-length(peaks$x)
+message(length(peaks$x), "storms identified at Site 01589035")
 ```
 
 ```{r Plotting hysteresis of storm, fig.height=4, fig.width=8}
@@ -196,8 +230,8 @@ peak_date <- data %>%
 target_peak_long<-format(peak_date[[1]][[peak.no]], format="%B %d, %Y")
 target_peak<-peak_date[[1]][[peak.no]]
 target_peak
-writeDir <- paste0("./Patapsco_Hysteresis/")
-dir_create(writeDir) #Create Export directory
+ <- paste0("./Patapsco_Hysteresis/")
+dir_create() #Create Export directory
 
 storm_uv<-uv_data %>%
   #filter(site_no==site) %>%
@@ -219,7 +253,7 @@ storm_uv %>%
   theme_bw()+
   scale_color_viridis_c(name="Date and Time",breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
   ggtitle(paste0("Hydrograph for storm #:",peak.no,"   ", target_peak_long))
-ggsave(paste0(writeDir,"Storm-",i," Hydrograph.png"),width=9,height=6)
+ggsave(paste0(,"Storm-",i," Hydrograph.png"),width=9,height=6)
 
 storm_uv %>%
   ggplot(aes(x=Flow_Inst, y=Turb_Inst,color=as.numeric(dateTime)))+
@@ -228,7 +262,7 @@ storm_uv %>%
   facet_wrap(~site_no)+
   scale_color_viridis_c(name="Date and Time", breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
   ggtitle(paste0("Hysteresis loops for storm #:",peak.no,"   ", target_peak))
-ggsave(paste0(writeDir,"Storm-",i," Hysteresis.png"),width=12)
+#ggsave(paste0(,"Storm-",i," Hysteresis.png"),width=12)
 })
 }
 
@@ -270,7 +304,7 @@ groblength <- groblength+1
 
 g<-do.call(arrangeGrob,plot_list)
 
-ggsave(file=paste0(writeDir,"Hysteresis",site,"-", min(seq),"-", max(seq),".png"), g, height=7, width=7) #saves g
+#ggsave(file=paste0(,"Hysteresis",site,"-", min(seq),"-", max(seq),".png"), g, height=7, width=7) #saves g
 
 ```
 ```{r tidy attempted remake of above}
