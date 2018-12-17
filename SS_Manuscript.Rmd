@@ -3,13 +3,13 @@ title: "Patapsco Gage/Sediment analysis"
 author: "Matthew J Cashman"
 date: "September 30, 2018"
 output:
-  html_notebook: 
-    toc: yes
   html_document:
     df_print: paged
+  html_notebook: 
+    toc: yes
 ---
 
-This code is the draft notebook, and framework for the manuscript for the Patapsco River dam removal projects. 
+This code is the draft notebook and framework for the manuscript for the Patapsco River dam removal project 
 
 
 # Project Prep
@@ -17,7 +17,9 @@ This code is the draft notebook, and framework for the manuscript for the Pataps
 ## Load packages
 ```{r Load Required Packages, echo=TRUE, message=TRUE, warning=TRUE, paged.print=TRUE}
 if (!require("pacman")) install.packages("pacman"); library(pacman)
-p_load(tidyverse, dataRetrieval, data.table, microbenchmark, fasttime, leaflet, sp, fs, gridExtra, rjson)
+p_load(tidyverse, dataRetrieval, data.table, leaflet, sp, fs, gridExtra, plotly)
+```
+```{r theme creation, include=FALSE}
 theme_ss <- function(base_size, base_family) {
   library(grid)
   library(ggthemes)
@@ -57,7 +59,7 @@ Multiple sites can be defined under Sites. Project will be the grouping of sites
 ```{r Retrieve gage site information from NWIS}
 Sites <- c("01589000","01589025","01589035")
 Project <- "Patapsco"
-read_NWIS <- FALSE
+read_NWIS <- TRUE
 SiteInfo<-readNWISsite(Sites)
 SiteInfo
 ```
@@ -70,13 +72,13 @@ leaflet(data = SiteInfo) %>% addTiles() %>%
 
 #Import Gage Data
 Let's figure out what data is available at these 3 gage locations
-```{r WhatData}
-whatNWISdata(siteNumber=Sites, service=c("uv","dv"),statCd = "00003") %>%
+```{r WhatData, eval=FALSE, include=FALSE}
+whatNWISdata(siteNumber=Sites, service=c("uv","dv","qw"),statCd = "00003") %>%
   select(agency_cd,site_no,station_nm,parm_cd,stat_cd,begin_date,end_date,count_nu) %>%
-  arrange(parm_cd, stat_cd) 
+  arrange(station_nm, parm_cd, stat_cd) 
 ```
 
-USGS parameter codes used by NWIS:
+A few of the main USGS parameter codes used by NWIS:
 * 00060 - Discharge
 * 00065 - Gage height
 * 63680 - Turbidity
@@ -86,7 +88,7 @@ USGS parameter codes used by NWIS:
 We will pull in all data for these parameters for the entire period of record.
 ```{r dataRetrieval Settings}
 startDate <- "2010-10-01"
-endDate <- "2018-10-01"
+endDate <- ""
 par <- c("00060","00065", "63680", "80154", "80155")
 ```
 
@@ -97,23 +99,30 @@ if (read_NWIS == TRUE){
   message("Reading uv data")
   uv_data <<- readNWISuv(siteNumbers = Sites,
             parameterCd = par,
-            startDate = "",
+            startDate = startDate,
             endDate = "",
             tz = "America/New_York") %>% renameNWISColumns() %>% 
             filter(Flow_Inst!=-999999) %>%
             filter(GH_Inst!=-999999)
-  
   message("Reading dv data")
+  par <- c("00060","00065", "63680", "80154", "80155")
   dv_data <<- readNWISdv(siteNumbers = Sites,
             parameterCd = par,
-            startDate = "",
-            endDate = "") %>% renameNWISColumns()%>% 
-            filter(Turb!=-999999) %>%
-            filter(Flow!=-999999)
-  message("Wring NWIS data locally for later loads")
+            startDate = startDate,
+            endDate = "") %>% renameNWISColumns() 
+  SiteInfo<<-readNWISsite(Sites)
+  meas <<- readNWISmeas(Sites, 
+                     startDate = startDate,
+                     endDate = "", 
+                     tz = "America/New_York", 
+                     expanded = TRUE, 
+                     convertType = TRUE)
+  message("Writing NWIS data locally for later loads")
   dir_create(writeDir) #Create Export directory
   fwrite(dv_data,paste0(writeDir,"/dv_data.csv"))
   fwrite(uv_data,paste0(writeDir,"/uv_data.csv"))
+  fwrite(SiteInfo,paste0(writeDir,"/site_info.csv"))
+  fwrite(meas,paste0(writeDir,"/site_meas.csv"))
   } else if(read_NWIS == FALSE)  {
   message("read_NWIS is defined to FALSE. Will read local files")
   message("Reading local Daily Data ")
@@ -122,6 +131,10 @@ if (read_NWIS == TRUE){
   message("Reading local Continuous Data")
     uv_data <- fread(paste0(writeDir,"/uv_data.csv"), colClasses=c(site_no="character"))
     uv_data$dateTime <- fastPOSIXct(uv_data$dateTime)
+  message("Reading local Site Info")
+    site_info <- fread(paste0(writeDir,"/site_info.csv"), colClasses=c(site_no="character"))
+  message("Reading local Measurement Data")
+    meas_data <- fread(paste0(writeDir,"/site_meas.csv"), colClasses=c(site_no="character"))
   } else{
     message("read_NWIS not defined. Data not loaded")
   }
@@ -130,18 +143,22 @@ if (read_NWIS == TRUE){
 #Analysis of time-series records
 Now that we have time-series data loaded into our environment, let's explore what we can see from these datasets.
 
-In the below plot, we can see that Hollofield has much lower cumulative bars. Why might that be the case?
+##Cumulative Daily Value Turbidity and Discharge
+Although in practice, this doesn't tell us much about the system, it is still useful to look at the values. In the below plot, we can see that Hollofield has much lower cumulative bars. Why might that be the case?
 ```{r Generate DV Cumulative Plots, echo=FALSE}
-data<-dv_data %>%
+data <-dv_data %>%
   select(Date, site_no,Flow,Turb) %>%
-    na.omit() %>% group_by(site_no) %>% mutate(cumQ=cumsum(Flow),cumT=cumsum(Turb))
-  
-ggplot(data, aes(x=cumQ, y=cumT, group=site_no, color=site_no))+
+    na.omit() %>% group_by(site_no) %>%  
+    filter(Flow!=-999999) %>%
+    filter(Turb!=-999999) %>%
+    mutate(cumQ=cumsum(Flow),cumT=cumsum(Turb)) %>% ungroup()
+plot<-ggplot(data, aes(x=cumQ, y=cumT, group=site_no, color=site_no))+
   geom_path(size=2)+
   theme_ss(14, "sans")+
    ylab("Cumulative Turbidity Trace")+
    xlab("Cumulative Flow in cfs")+
   scale_color_viridis_d(labels=c("Hollofield","Catonsville","Elkridge"))
+ggplotly(plot)
 ```
 Now we have plotted both cumulative traces as a function of time. As we can clearly see, the gage at Hollofield was turned off for turbidity at the beginning of the 2016 WY. Elkridge and Catonsville have continued until the present.
 ```{r Generate time-explicit DV cumulative plots, echo=FALSE}
@@ -154,77 +171,48 @@ ggplot(aes(x=Date, y=value, group=site_no, color=site_no))+
   ylab("Cumulative  Trace")+
   scale_color_viridis_d(labels=c("Hollofield","Catonsville","Elkridge"))
 ```
-
-```{r Generate DV transport plots}
+##DV SSC Transport Plots
+Since we're not actually interested in turbidity, but rather SSC - or better yet SS load - we can plot up the transport plots for each month and see how each site reponds differently to the dam removal. 
+```{r Generate DV transport plots By Year and Month}
 library(devtools)
-library(gganimate)
-p_load(gganimate)
 
 p<-dv_data %>%
- # select(Date, site_no,Flow,Turb) %>%
-    na.omit() %>% group_by(site_no) %>% 
- # filter(Date < "2014-4-1") %>%
+  group_by(site_no) %>% 
+  filter(Flow != -999999) %>%
+  filter(Date > "2010-10-28"& Date < "2017-10-1") %>%
+  filter(site_no=="01589025"|site_no=="01589035")%>%
   separate(Date, by="-", into = c("Year","Month","Day")) %>%
-  unite(MonthYear,Year,Month,sep=".")  %>%
+  unite(MonthYear,Year,Month,sep=".") %>% ungroup()
 
-ggplot(aes(x=log(Flow), y=log(`80154`+1), group=site_no, color=site_no))+
+plot <- ggplot(data=p, aes(x=log(Flow), y=log(`80154`+1), group=site_no, color=site_no, frame=MonthYear))+
   geom_point(size=1.5, alpha=0.5)+
-  theme_ss(14, "sans")+
+ # theme_ss(14, "sans")+
   ylab("Mean Daily SSC (log units)")+
   xlab("Mean Daily Flow (log units)")+
   scale_color_viridis_d(labels=c("Hollofield","Catonsville","Elkridge"))+
-  geom_smooth(method="lm", se=F)+
-  labs(title = 'Year.Month: {closest_state}', x = 'Mean Daily Flow (log units+1)', y = 'Mean Daily SSC (log+1 units)') +
-  transition_states(MonthYear, transition_length = 3, state_length = 3)+
-  enter_fade() + 
-  exit_fade() +
-  ease_aes('linear')
-
-animate(p, 600,6)
+  geom_smooth(method="lm", se=F)
+ggplotly(plot)
 ```
-### monthly cumulative transport plots
-```{r Generate monthly cumulative transport plots, fig.height=10, fig.width=12}
-# library(transformr)
-# devtools::install_github("thomasp85/transformr")
-# library(devtools)
-# devtools:::install_local("C:/Users/mcashman/Downloads/transformr-master")
 
-data<-dv_data %>%
- # select(Date, site_no,Flow,Turb) %>%
-    na.omit() %>% group_by(site_no) %>%
-  #filter(Date < "2018-10-1") %>%
-  separate(Date, by="-", into = c("Year","Month","Day")) %>%
-  unite(MonthYear,Year,Month,sep=".") %>%
-  group_by(site_no,MonthYear) %>% mutate(cumQ=cumsum(Flow),cumSSC=cumsum(`80155`)) 
-
-p<-ggplot(data, aes(x=log(cumQ), y=log(cumSSC), group=site_no, color=site_no))+
-  geom_point(size=2, alpha=0.5)+
-  theme_ss(14, "sans")+
-  ylab("Mean Daily SSC")+
-  xlab("Mean Daily Flow")+
-  scale_color_viridis_d(labels=c("Hollofield","Catonsville","Elkridge"))+
-  theme(legend.position="top")+
-  labs(title = 'Year.Month: {closest_state}') +
-  transition_states(MonthYear, transition_length = 3, state_length=3)+
-  enter_fade() + 
-  exit_fade() +
-  ease_aes('linear')
-animate(p, 600,6)
-
-```
 ##Analysis of net gain/loss of sediment stage by stage
-```{r}
-dv_data %>%
+```{r Net Fain/loss by stage - Table}
+cum_dv_data <- dv_data %>%
  # select(Date, site_no,Flow,Turb) %>%
-    na.omit() %>% group_by(site_no) %>%
+  #na.omit() %>% 
+  group_by(site_no) %>%
   filter(Date > "2010-10-1") %>%
+  select(site_no, Date,Flow,`80154`, `80155`) %>%
  # separate(Date, by="-", into = c("Year","Month","Day")) %>%
  # unite(MonthYear,Year,Month,sep=".") %>%
   group_by(site_no) %>% mutate(cumQ=cumsum(Flow),cumSSC=cumsum(`80155`)) %>%
   select(site_no,cumSSC,Date) %>%
   spread(site_no,cumSSC) %>%
   mutate(diff00_25 = `01589025`-`01589000`) %>%
-  mutate(diff25_35 = `01589035`-`01589025`) %>%
+  mutate(diff25_35 = `01589035`-`01589025`) 
+cum_dv_data
+```
+```{r Plot the cumulative load data}
+cum_dv_data%>%
   gather(key=variable, value=value, -Date) %>%
 ggplot(aes(x=Date, y=value, color=variable,group=variable))+
   geom_path(size=2)+
@@ -232,16 +220,22 @@ ggplot(aes(x=Date, y=value, color=variable,group=variable))+
   ylab("Cumulative Sediment Load")+
   scale_color_viridis_d(labels=c("Hollofield","Catonsville","Elkridge","Gain/Loss between\nHollofiend and Catonsville", "Gain/Loss between\nCatonsville and Elkridge"))+
   theme(legend.position="top")+
+  geom_hline(yintercept=0, linetype=1)+
   geom_vline(xintercept=as.numeric(as.Date("2010-10-01")), linetype=4)+
   geom_vline(xintercept=as.numeric(as.Date("2018-9-11")), linetype=4)+
   geom_vline(xintercept=as.numeric(as.Date("2018-5-27")), linetype=2)+
   geom_vline(xintercept=as.numeric(as.Date("2016-7-30")), linetype=2)+
   xlim(as.Date("2009-10-01"),as.Date("2018-10-23"))
 ```
+We can look at our dataframe to see how many days are missing values for cumulative load? We expect large numbers at Hollofield since it was turned off at the end of WY2015. The remaining 394 days are for the period of unapproved records in WY2018.
+```{r How many days are missing values for cumulative load?}
+cum_dv_data %>%
+  summarise_all(funs(sum(is.na(.))))
+```
 
 
 ## Storm-by-storm analysis
-```{r Identify when storms occurred}
+```{r Identify when storms occurred, echo=FALSE}
 dv_data %>%
   select(Date, site_no,Flow,Turb) %>%
     na.omit() %>% group_by(site_no) %>% mutate(cumQ=cumsum(Flow),cumT=cumsum(Turb)) %>%
@@ -251,10 +245,11 @@ dv_data %>%
   ggplot(aes(x=Date, y=Flow, group=site_no, color=site_no))+
   geom_line(size=1.5, alpha=0.5)+
   scale_color_viridis_d()+
-  geom_smooth(span=0.03, SE=FALSE)
+  ggtitle("Mean Daily Flow at All Patapsco Gages")
 ```
-
-```{r Storm picker smoothing algorithm}
+A smoothing algorithm is applied over the discharge window and used to pick out peaks based on local maxa of the smoothing curve
+```{r Storm picker smoothing algorithm, fig.height=10, fig.width=8}
+p_load(zoo)
 argmax <- function(x, y, w=1, ...) {
   require(zoo)
   n <- length(y)
@@ -272,17 +267,16 @@ test <- function(w, span) {
   y.min <- min(y)
   points(x[peaks$i], peaks$y.hat[peaks$i], col="Red", pch=19, cex=1.25)
 }
-library(tidyverse)
 data <- dv_data %>%
   select(Date, site_no,Flow,Turb) %>%
     na.omit() %>% group_by(site_no) %>% mutate(cumQ=cumsum(Flow),cumT=cumsum(Turb)) %>%
-  filter(Date < "2017-1-1") %>% filter(site_no=="01589035")
+  filter(Date < "2018-1-1") %>% filter(site_no=="01589035")
 x <- as.numeric(data$Date)
 y <- log(data$Flow)
 par(mfrow=c(4,1))
 plot(x,y)
 lines(x,y)
-test(1, 0.002)
+test(1, 0.003)
 test(1, 0.005)
 test(2, 0.02)
 length(x)
@@ -291,23 +285,23 @@ message(length(peaks$x), "storms identified at Site 01589035")
 ```
 
 ```{r Plotting hysteresis of storm, fig.height=4, fig.width=8}
-peak.no <- 2
+peak.no <- 8
 peak_date <- data %>%
-  filter(Date %in% as.Date(peaks$x))
+  filter(Date %in% as.Date(peaks$x)) %>%
+  filter(Turb > 100)
 target_peak_long<-format(peak_date[[1]][[peak.no]], format="%B %d, %Y")
 target_peak<-peak_date[[1]][[peak.no]]
-target_peak
 
 storm_uv<-uv_data %>%
   #filter(site_no==site) %>%
-  filter(dateTime > target_peak-2 & dateTime < target_peak+2)
+  filter(dateTime > target_peak-0.2 & dateTime < target_peak+1.2)
 
 temp <- storm_uv %>%
   filter(site_no=="01589035") 
 min <- min(temp$dateTime)
 mean <- mean(temp$dateTime)
 max <- max(temp$dateTime)
-storm_uv$dateTime
+
 storm_uv %>%
   gather(variable, value, c(Flow_Inst,Turb_Inst)) %>%
   #filter(site_no==site) %>%
@@ -317,32 +311,40 @@ storm_uv %>%
   scale_color_viridis_c(name="Date and Time",breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
   ggtitle(paste0("Hydrograph for storm #:",peak.no,"   ", target_peak_long))
 
-```
-
-```{r Storm specific Hysterists loop, fig.height=4, fig.width=12}
-storm_uv %>%
-  ggplot(aes(x=Flow_Inst, y=Turb_Inst,color=as.numeric(dateTime)))+
+data2<-storm_uv %>%
+  filter(site_no!="01589000") 
+data2$site_no<-factor(data2$site_no)
+p<-ggplot(data2,aes(x=Flow_Inst, y=Turb_Inst,color=as.numeric(dateTime)))+
   geom_path(size=2)+
-  facet_wrap(~site_no)+
+  theme_ss_facet(8)+
+  #scale_x_log10()+
+  #scale_y_log10()+
+  ylab("Instantaneous Turbidity")+
+  xlab("Instantaneous Flow (cfs)")+
+  guides(fill=FALSE, color=FALSE) +
+  theme(axis.title.x = element_text(size=rel(1)), strip.text=element_text(size=rel(0.8)))+
+  facet_wrap(~full_name)+
   scale_color_viridis_c(name="Date and Time", breaks=as.numeric(c(min,mean,max)),labels=c(min, mean, max))+
   ggtitle(paste0("Hysteresis loops for storm #:",peak.no,"   ", target_peak))
+ggsave(plot = p, filename = "./Presentation_Output/Hysteresis_9.png", height = 3, width = 6)
+
 ```
 
-```{r Loop plot to save all hysteresis results}
+```{r Loop plot to save all hysteresis results, eval=FALSE, include=FALSE}
 for (i in seq(peaks$x)){
 tryCatch({
  peak.no <- i
 peak_date <- data %>%
-  filter(Date %in% as.Date(peaks$x))
+  filter(Date %in% as.Date(peaks$x)) %>%
+  filter(Flow > 200)
 target_peak_long<-format(peak_date[[1]][[peak.no]], format="%B %d, %Y")
 target_peak<-peak_date[[1]][[peak.no]]
-target_peak 
-<- paste0("./Patapsco_Hysteresis/")
-dir_create() #Create Export directory
+target_peak <- paste0("./Patapsco_Hysteresis/")
+dir_create(target_peak) #Create Export directory
 
 storm_uv<-uv_data %>%
   #filter(site_no==site) %>%
-  filter(dateTime > target_peak-2 & dateTime < target_peak+2)
+  filter(dateTime > target_peak-1 & dateTime < target_peak+3)
 
 temp <- storm_uv %>%
   filter(site_no=="01589035") 
@@ -375,7 +377,7 @@ storm_uv %>%
 
 ```
 
-```{r Loop plot for all hysteresis results for 1 site, message=FALSE, warning=FALSE}
+```{r Loop plot for all hysteresis results for 1 site, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 site <- "01589025"
 
 seq <- 173:185
@@ -385,7 +387,8 @@ for (i in seq){
 peak.no <- i
 
 peak_date <- data %>%
-  filter(Date %in% as.Date(peaks$x))
+  filter(Date %in% as.Date(peaks$x)) %>%
+  filter(Flow > 200)
 
 target_peak<-peak_date[[1]][[peak.no]]
   
@@ -414,7 +417,7 @@ g<-do.call(arrangeGrob,plot_list)
 #ggsave(file=paste0(,"Hysteresis",site,"-", min(seq),"-", max(seq),".png"), g, height=7, width=7) #saves g
 
 ```
-```{r tidy attempted remake of above}
+```{r tidy attempted remake of above, eval=FALSE, include=FALSE}
 site <- "01589035"
 
 list_data = list()
@@ -451,5 +454,15 @@ storm_data %>%
   #guides(color=FALSE)+
   facet_wrap(~storm_id)
   
+```
+
+#Discrete Sediment Data Analysis
+This data pull for the discrete data is not working and I'm not sure why. Still needs to be diagnosed and fixed.
+```{r Hysteresis loop information based on discrete data available}
+# pCode <- c("69309","69314","70331","70332","70333","70334","70335","70336","80154","80155")
+# discrete <- readNWISdata(siteNumbers = Sites, parameterCd = pCode,
+#                       startDate = startDate, endDate = endDate,
+#                       service = "qw")
+
 ```
 

@@ -15,14 +15,14 @@ output:
 ## Parameter selection
 Before we begin with our specific stage analysis, there are several settings that we will have to define first. 1. Site  - USGS site number to do the analysis on. 2. startDate - Beginning of the period of interest, if available. Blank will pull from the earliest record. 3. endDate - End of the period of interest. Blank will pull from the latest record. 4. Quantiles - Mean daily flow quantiles, in decimal form, for the analysis. e.g. 0.8 is the 80% of mean daily flow, or 20% exceedance.5. Sensitivity - Used in the clean up procedure. Will reject any values outside of discharge quantile equation: +/- sensitivity, in percent 6. target - Target quantile of interest, used to create single, focused output graphs 
 
-``` {r}
-Site <- "01589025"
-startDate <- ""
-endDate <- ""
+```{r Setting analysis parameters}
+Site <- "01589035"
+startDate <- "2010-10-29"
+endDate <- "2017-09-31"
 Quantiles <- c(0.3,0.5,0.7,0.8,0.85,0.9,0.95,0.98,0.99,0.9975,0.999,0.9999,0.9999999)
 Sensitivity <- 0.01
-target <- 8
 ```
+
 
 
 ```{r Loading Required Packages, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
@@ -280,7 +280,7 @@ print(target_plot)
 }
 ```
 
-# Let's explore site measurements
+# Let's explore site measurements (This is for all sites, not specific to the above analysis)
 
 ##Download site measurement data and derive secondary stats
 ```{r Download site measurement data and calculate derived stats}
@@ -432,7 +432,7 @@ ggplot(aes(x=log(discharge_va), y=chan_velocity, color=site_no,group=site_no)) +
 
 ##Plot froude~discharge+Year
 ```{r Froude for discharge, echo=FALSE}
-meas %>%
+plot <- meas %>%
   filter(measurement_dt > "2009-10-01" & measurement_dt < "2018-10-23") %>%
   filter(discharge_va > 1 & discharge_va < 2000) %>%
   separate(measurement_dt, c("Year", "Month","Day")) %>%
@@ -452,30 +452,27 @@ geom_smooth(se=FALSE, method = "lm")+
 ```{r Froude for discharge - Yearly animation, echo=FALSE}
 #p_load(stringi, rlang, glue, scales)
 #devtools::install_github("dgrtwo/gganimate", local=FALSE)
-p_load(rlang, httr)
-p_load(BiocManager)
+# p_load(rlang, httr)
+# p_load(BiocManager)
 
-p_load(gganimate)
-
-library(devtools)
-install_github("dgrtwo/gganimate", dependencies = TRUE)
+# library(devtools)
+#install_github("dgrtwo/gganimate", dependencies = TRUE)
 
 
-meas %>%
+data<-meas %>%
   filter(measurement_dt > "2009-10-01" & measurement_dt < "2018-10-23") %>%
   filter(discharge_va > 1 & discharge_va < 2000) %>%
-  separate(measurement_dt, c("Year", "Month","Day"))  %>%
-ggplot(aes(x=log(discharge_va), y=Froude, color=site_no,group=site_no)) +
+  separate(measurement_dt, c("Year", "Month","Day"))
+
+plot<-ggplot(data=data, aes(x=log(discharge_va), y=Froude, color=site_no,group=site_no, frame=Year)) +
   geom_point()+
   scale_color_viridis_d()  +
   ggtitle(paste("USGS ", Site, sitedata$station_nm),
           subtitle = paste("Froude numbers for discharge, by year"))+
   theme_ss(14, "sans")+
   #coord_trans(x="log", y="log")+
-  geom_smooth(se=FALSE, method = "lm")+
-  labs(title = 'Year: {closest_state}', x = 'Discharge (cfs) in log units', y = 'Froude Number') +
-  transition_states(Year, transition_length = 2, state_length = 3)+
-  enter_fade() + 
-  exit_fade() +
-  ease_aes('linear')
+  geom_smooth(se=FALSE, method = "lm")
+
+ggplotly(plot)
+
 ```
