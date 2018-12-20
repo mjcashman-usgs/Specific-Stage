@@ -1,0 +1,69 @@
+Updates to Specific Stage Analysis - Patapsco River
+========================================================
+author: Matthew J Cashman
+date: 27-Nov-2018
+autosize: true
+
+First Slide
+========================================================
+
+For more details on authoring R presentations please visit <https://support.rstudio.com/hc/en-us/articles/200486468>.
+
+- Bullet 1
+- Bullet 2
+- Bullet 3
+```{r read data, echo=FALSE}
+if (!require("pacman")) install.packages("pacman"); library(pacman)
+p_load(tidyverse, dataRetrieval, data.table, leaflet, fasttime, sp, fs, gridExtra, plotly)
+
+  writeDir <- paste0("./NWIS_pulls/Patapsco")
+
+  #Read DV data  
+    dv_data <- fread(paste0(writeDir,"/dv_data.csv"), colClasses=c(site_no="character")) %>%
+      filter(Flow != "-999999")
+    dv_data$Date <- as.Date(dv_data$Date)
+  #Read UV data
+    uv_data <- fread(paste0(writeDir,"/uv_data.csv"), colClasses=c(site_no="character")) %>%
+      filter(Flow_Inst != "-999999") %>%
+      filter(GH_Inst != "-999999")
+    uv_data$dateTime <- fastPOSIXct(uv_data$dateTime)
+  #Read site data
+    site_info <- fread(paste0(writeDir,"/site_info.csv"), colClasses=c(site_no="character")) %>%
+      unite(full_name, agency_cd, site_no, station_nm, sep = " ", remove=FALSE)
+    
+  #Read measurement data
+    meas_data <- fread(paste0(writeDir,"/site_meas.csv"), colClasses=c(site_no="character"))
+    meas_data$measurement_dateTime <- fastPOSIXct(meas_data$measurement_dateTime)
+
+  #Link site and name info into other datasets
+    dv_data <- left_join(dv_data,site_info, by = c("site_no"))
+    uv_data <- left_join(uv_data,site_info, by = c("site_no"))
+    meas_data <- left_join(meas_data,site_info, by = c("site_no"))
+
+ 
+```
+Slide With Daily Plot
+========================================================
+
+```{r Daily Data, echo=FALSE}
+
+ggplot(data=dv_data, aes(x=Date, y=Flow))+
+  geom_line(alpha = 0.8)+
+  ylab("Mean Daily Discharge (cfs)")+
+  xlab("")+
+  #theme_ss(14,"sans")+
+  facet_wrap(~ full_name, ncol = 1)
+```
+
+Slide With UV Plot
+========================================================
+
+```{r echo=FALSE}
+ggplot(data=uv_data, aes(x=dateTime, y=Flow_Inst))+
+    geom_line(alpha = 0.8)+
+    geom_point(data=meas_data, aes(x=measurement_dateTime, y=discharge_va), color="red")+
+  #theme_ss(14,"sans")+
+    ylab("Instantaneous Discharge (cfs)")+
+    xlab("")+
+    facet_wrap(~ full_name, ncol = 1)
+```

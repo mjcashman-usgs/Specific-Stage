@@ -1,0 +1,290 @@
+\documentclass[]{article}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+\else % if luatex or xelatex
+  \ifxetex
+    \usepackage{mathspec}
+  \else
+    \usepackage{fontspec}
+  \fi
+  \defaultfontfeatures{Ligatures=TeX,Scale=MatchLowercase}
+\fi
+% use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+% use microtype if available
+\IfFileExists{microtype.sty}{%
+\usepackage{microtype}
+\UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\hypersetup{unicode=true,
+            pdftitle={Specific Stage Analysis},
+            pdfauthor={Matthew J Cashman},
+            pdfborder={0 0 0},
+            breaklinks=true}
+\urlstyle{same}  % don't use monospace font for urls
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.77,0.63,0.00}{#1}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\usepackage{graphicx,grffile}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+\IfFileExists{parskip.sty}{%
+\usepackage{parskip}
+}{% else
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{0}
+% Redefines (sub)paragraphs to behave more like sections
+\ifx\paragraph\undefined\else
+\let\oldparagraph\paragraph
+\renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+\let\oldsubparagraph\subparagraph
+\renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+%%% Use protect on footnotes to avoid problems with footnotes in titles
+\let\rmarkdownfootnote\footnote%
+\def\footnote{\protect\rmarkdownfootnote}
+
+%%% Change title format to be more compact
+\usepackage{titling}
+
+% Create subtitle command for use in maketitle
+\newcommand{\subtitle}[1]{
+  \posttitle{
+    \begin{center}\large#1\end{center}
+    }
+}
+
+\setlength{\droptitle}{-2em}
+
+  \title{Specific Stage Analysis}
+    \pretitle{\vspace{\droptitle}\centering\huge}
+  \posttitle{\par}
+    \author{Matthew J Cashman}
+    \preauthor{\centering\large\emph}
+  \postauthor{\par}
+      \predate{\centering\large\emph}
+  \postdate{\par}
+    \date{September 30, 2018}
+
+
+\begin{document}
+\maketitle
+
+\section{Pre-analysis}\label{pre-analysis}
+
+\subsection{Parameter selection}\label{parameter-selection}
+
+Before we begin with our specific stage analysis, there are several
+settings that we will have to define first. 1. Site - USGS site number
+to do the analysis on. 2. startDate - Beginning of the period of
+interest, if available. Blank will pull from the earliest record. 3.
+endDate - End of the period of interest. Blank will pull from the latest
+record. 4. Quantiles - Mean daily flow quantiles, in decimal form, for
+the analysis. e.g.~0.8 is the 80\% of mean daily flow, or 20\%
+exceedance.5. Sensitivity - Used in the clean up procedure. Will reject
+any values outside of discharge quantile equation: +/- sensitivity, in
+percent 6. target - Target quantile of interest, used to create single,
+focused output graphs
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{Site <-}\StringTok{ "01589035"}
+\NormalTok{startDate <-}\StringTok{ ""}
+\NormalTok{endDate <-}\StringTok{ ""}
+\NormalTok{Quantiles <-}\StringTok{ }\KeywordTok{c}\NormalTok{(}\FloatTok{0.3}\NormalTok{,}\FloatTok{0.5}\NormalTok{,}\FloatTok{0.7}\NormalTok{,}\FloatTok{0.8}\NormalTok{,}\FloatTok{0.85}\NormalTok{,}\FloatTok{0.9}\NormalTok{,}\FloatTok{0.95}\NormalTok{,}\FloatTok{0.98}\NormalTok{,}\FloatTok{0.99}\NormalTok{,}\FloatTok{0.9975}\NormalTok{,}\FloatTok{0.999}\NormalTok{,}\FloatTok{0.9999}\NormalTok{,}\FloatTok{0.9999999}\NormalTok{)}
+\NormalTok{Sensitivity <-}\StringTok{ }\FloatTok{0.01}
+\NormalTok{target <-}\StringTok{ }\DecValTok{8}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Load NWIS data}\label{load-nwis-data}
+
+Here we are loading data that has been loaded locally. Options exist to
+pull directly from NWIS using the dataRetrieval package. Error values or
+missing data (e.g.~values of -999999) are excluded at this point.
+
+\begin{verbatim}
+## Reading Daily Data locally
+\end{verbatim}
+
+\begin{verbatim}
+## Reading Continuous Data locally
+\end{verbatim}
+
+\begin{verbatim}
+## Reading Site Info locally
+\end{verbatim}
+
+\subsection{Plot NWIS data}\label{plot-nwis-data}
+
+After our data has been downloaded, we will plot mean daily discharge,
+instantaneous unit discharge, and instantaneous unit stage to check for
+any gaps or weird values. Directly measured values are indicated by red
+points.
+
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/Plot Loaded DV/UV Data-1.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/Plot Loaded DV/UV Data-2.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/Plot Loaded DV/UV Data-3.pdf}
+
+\section{Specific Stage Analysis}\label{specific-stage-analysis}
+
+\subsection{Run the Analysis}\label{run-the-analysis}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{#Run Specific Stage Analysis ----}
+\NormalTok{SS_results <-}\StringTok{ }\KeywordTok{SS}\NormalTok{(Site, Quantiles)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Cleanup}\label{cleanup}
+
+Now we check results for stage and discharge to make sure there are no
+outliers. In the figure below, we can see some scatter around our target
+discharge quantiles.
+
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/Plot Check for Outliers-1.pdf}
+
+A simple dplyr pipe uses mutate to calculate the percent difference
+between the calculated discharge and the discharge of interest. Results
+are then filtered to select only those values less than the percent
+difference specified by Sensitivity.
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{SS_results_clean <-}\StringTok{ }\NormalTok{SS_results }\OperatorTok{%>%}
+\StringTok{                    }\KeywordTok{mutate}\NormalTok{(}\DataTypeTok{pc_diff =}\NormalTok{ (Flow_Inst}\OperatorTok{-}\NormalTok{Quantflow)}\OperatorTok{/}\NormalTok{Quantflow) }\OperatorTok{%>%}
+\StringTok{                    }\KeywordTok{filter}\NormalTok{(pc_diff }\OperatorTok{>}\StringTok{ }\OperatorTok{-}\NormalTok{Sensitivity }\OperatorTok{&}\StringTok{ }\NormalTok{pc_diff }\OperatorTok{<}\StringTok{ }\NormalTok{Sensitivity)}
+\end{Highlighting}
+\end{Shaded}
+
+\subsection{Post-outlier Check}\label{post-outlier-check}
+
+Now we check results again to make sure all outliers have been removed.
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/Plot Cleaned results-1.pdf}
+
+\section{Specific Stage Result Plots}\label{specific-stage-result-plots}
+
+Now that outliers have been removed, we can print all our results. First
+in one plot for all quantiles. Next are individual plots for all target
+quantiles
+
+\subsection{All Quantiles Plot}\label{all-quantiles-plot}
+
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-2-1.pdf}
+
+\subsection{Target Quantile Plots}\label{target-quantile-plots}
+
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-1.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-2.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-3.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-4.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-5.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-6.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-7.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-8.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-9.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-10.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-11.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-12.pdf}
+\includegraphics{NWIS_SS_Notebook_files/figure-latex/unnamed-chunk-3-13.pdf}
+
+\section{Let's explore site
+measurements}\label{lets-explore-site-measurements}
+
+\subsection{Download site measurement
+data}\label{download-site-measurement-data}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\NormalTok{rating<-}\KeywordTok{readNWISrating}\NormalTok{(}\DataTypeTok{siteNumber=}\NormalTok{ Site, }\StringTok{"exsa"}\NormalTok{)}
+\KeywordTok{head}\NormalTok{(rating)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+##   INDEP SHIFT  DEP STOR
+## 1  4.41 -0.01 5.00 <NA>
+## 2  4.42 -0.01 5.28 <NA>
+## 3  4.43 -0.01 5.58 <NA>
+## 4  4.44 -0.01 5.88 <NA>
+## 5  4.45 -0.01 6.19 <NA>
+## 6  4.46 -0.01 6.51 <NA>
+\end{verbatim}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{tail}\NormalTok{(rating)}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{verbatim}
+##      INDEP SHIFT      DEP STOR
+## 2075 25.15     0 27250.32 <NA>
+## 2076 25.16     0 27260.25 <NA>
+## 2077 25.17     0 27270.19 <NA>
+## 2078 25.18     0 27280.13 <NA>
+## 2079 25.19     0 27290.07 <NA>
+## 2080 25.20     0 27300.00    *
+\end{verbatim}
+
+
+\end{document}
