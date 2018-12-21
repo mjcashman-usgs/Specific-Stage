@@ -1,4 +1,5 @@
 if (!require("pacman")) install.packages("pacman"); library(pacman)
+
 p_load(smwrData, DVstats)
 data(ChoptankFlow)
 # Process by calendar year as that is the retrieval range
@@ -44,3 +45,48 @@ devtools::install_github("USGS-R/Rainmaker")
 library(Rainmaker)
 
 
+## Group and s
+
+#Calculate and scale turbidity and flow
+hyst_data <- Q_Storm  %>%
+  na.omit() %>%
+  select(site_no,dateTime,Q_cfs,GH_Inst,Turb_Inst,elev_GH,Qual_storm,EventID) %>%
+  group_by(EventID) %>%
+  mutate(scale_turb = (Turb_Inst-min(Turb_Inst))/(max(Turb_Inst)-min(Turb_Inst))) %>%
+  mutate(scale_Q = (Q_cfs-min(Q_cfs))/(max(Q_cfs)-min(Q_cfs)))
+
+#Plot 
+for (i in unique(hyst_data$EventID)) {
+  plot_data <- hyst_data %>%
+    filter(EventID == i )
+  
+ lab_dates <- pretty(plot_data$dateTime)
+ label_Q <- max(plot_data$Q_cfs)
+ label_Turb <- max(plot_data$Turb_Inst)
+ 
+   p + annotate("text", x = 4, y = 25, label = "Some text")
+ 
+  plot<- ggplot(plot_data, aes(x=scale_Q,y=scale_turb, color=as.numeric(dateTime)))+
+  geom_path(size=2)+
+  geom_point()+
+  scale_color_viridis_c(breaks = as.numeric(lab_dates), 
+                        labels = lab_dates)+
+    annotate("text", label = paste0("Storm Max ", label_Q," cfs", "\nStorm Turb ", label_Turb, " FNU"), x=0.2,y=1)
+ print(plot)
+}
+
+
+#Calculate flow quantiles within each storm
+Qi = k(Qmax-Qmin)+Qmax
+
+#Calculate Hysteresis value based on quantile
+
+HIQ = CRL_Qi - CFL_Qi
+
+
+#Calculate Loop area
+library(geometry)
+polyarea(x=Data$Q, y=Data$DOC)
+
+
+#Calculate shape clockwise/counterclockwise number etc
