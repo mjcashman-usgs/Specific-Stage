@@ -1,0 +1,950 @@
+---
+title: "Patapsco Gage/Sediment analysis"
+author: "Matthew J Cashman"
+date: "September 30, 2018"
+output:  html_document
+
+---
+
+This code is the draft notebook and framework for the manuscript for the Patapsco River dam removal project 
+
+```{r Load packages, message=FALSE, warning=FALSE, include=FALSE}
+if (!require("pacman")) install.packages("pacman"); library(pacman)
+p_load(tidyverse, dataRetrieval, data.table, leaflet, fasttime, sp, fs, gridExtra, plotly, wesanderson, magrittr,shiny)
+```
+
+```{r time limits, echo=FALSE}
+Sites <- c("01589000","01589025","01589035")
+end <- "2017-09-30"
+start <- "2010-10-01"
+
+dam_start <-"2010-10-01"
+dam_end <-"2010-10-01"
+
+EC_1 <- "2016-7-30"
+EC_2 <- "2018-5-27"
+
+Bloede_start <-"2018-9-11"
+```
+
+```{r Print Settings, echo = FALSE}
+height <- 6.75
+width <- 10
+```
+
+
+```{r read data, echo=FALSE}
+writeDir <- paste0("./NWIS_pulls/Patapsco")
+#Read DV data  
+  dv_data <- fread(paste0(writeDir,"/dv_data.csv"), colClasses=c(site_no="character")) %>%
+    filter(Flow != "-999999")
+  dv_data$Date <- as.Date(dv_data$Date)
+#Read UV data
+  uv_data <- fread(paste0(writeDir,"/uv_data.csv"), colClasses=c(site_no="character")) %>%
+    filter(Flow_Inst != "-999999") %>%
+    filter(GH_Inst != "-999999")
+  uv_data$dateTime <- fastPOSIXct(uv_data$dateTime)
+#Read site data
+  site_info <- fread(paste0(writeDir,"/site_info.csv"), colClasses=c(site_no="character")) %>%
+    unite(full_name, agency_cd, site_no, station_nm, sep = " ", remove=FALSE)
+#Read measurement data
+  meas_data <- fread(paste0(writeDir,"/site_meas.csv"), colClasses=c(site_no="character"))
+  meas_data$measurement_dateTime <- fastPOSIXct(meas_data$measurement_dateTime)
+#Link site and name info into other datasets
+  dv_data <- left_join(dv_data,site_info, by = c("site_no"))
+  uv_data <- left_join(uv_data,site_info, by = c("site_no"))
+  meas_data <- left_join(meas_data,site_info, by = c("site_no"))
+#Calculate stage to datum elevation
+  uv_data %<>% 
+    mutate(elev_GH = GH_Inst + alt_va)
+  meas_data %<>% 
+    mutate(elev_GH = gage_height_va + alt_va)
+  
+```
+
+```{r Facet Theme creation}
+theme_ss_facet <- function (size) { 
+    theme_bw(base_size=size, base_family="sans") +
+        theme(strip.background = element_rect(fill="lightgrey", color = "black", size=0.2),
+          strip.text = element_text(colour = 'black', size=rel(0.9)),
+          axis.title.x = element_blank(),
+          legend.title = element_text(size = rel(0.8)),
+          legend.text = element_text(size = rel(0.7)))
+}
+
+```
+
+##Mean Daily Flow
+```{r Daily Data, echo=FALSE}
+p<-ggplot(data=dv_data, aes(x=Date, y=Flow))+
+  geom_line(alpha = 0.8)+
+  ylab("Mean Daily Discharge (cfs)")+
+  scale_y_log10()+
+  facet_wrap(~ full_name, ncol = 1)+
+    theme_ss_facet(18)+
+  scale_x_date(date_labels = "%Y",date_breaks = "1 year",limits= as.Date(strptime(c(start,end), format = "%Y-%m-%d")))
+p
+ggsave(plot = p, filename = "./Manuscript_Output/DV_Discharge.png", height = height, width =  width)
+
+#ggplotly(p)
+```
+
+##Instantaneous Flow 
+```{r echo=FALSE, warning=FALSE}
+p<-ggplot(data=uv_data, aes(x=dateTime, y=Flow_Inst))+
+    geom_line(alpha = 0.8)+
+    geom_point(data=meas_data, aes(x=measurement_dateTime, y=discharge_va), color="#00529b")+
+    theme_ss_facet(18)+
+    ylab("Instantaneous Discharge (cfs)")+
+    scale_y_log10()+
+    facet_wrap(~ full_name, ncol = 1)+
+    scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c(start,end), format = "%Y-%m-%d")))
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/UV_Discharge.png", height = height, width = width)
+```
+
+##Instantanous Stage
+```{r echo=FALSE, warning=FALSE}
+p<-ggplot(data=uv_data, aes(x=dateTime, y=elev_GH))+
+    geom_line(alpha = 0.8)+
+    geom_point(data=meas_data, aes(x=measurement_dateTime, y=elev_GH), color="#00529b")+
+    theme_ss_facet(18)+
+    ylab("Instantaneous Gage Height, ft (NAVD88)")+
+    facet_wrap(~ full_name, ncol = 1, scales = "free_y")+
+    scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c(start,end), format = "%Y-%m-%d")))
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/UV_Stage.png", height = height, width = width)
+```
+#Specific Stage Analysis
+
+```{r Do Specific Stage Analysis, eval=FALSE, include=FALSE}
+Quantiles <- c(0.3,0.5,0.7,0.8,0.85,0.9,0.95,0.98,0.99,0.9975,0.999,0.9999,0.9999999)
+Sensitivity <- 0.01
+
+SS <- function(Sites, Quantiles) {
+  Sitelist = list()
+  for(p in 1:(length(Sites))){
+  
+  Site <- Sites[[p]]
+  Site_dv <- subset(dv_data, site_no==Site)
+  Site_uv <- subset(uv_data, site_no==Site)
+  
+  quantiles <<- quantile(Site_dv$Flow, probs=Quantiles, na.rm=TRUE)
+  
+  Runlist = list()   #Create quantile loop list to later bind
+  for(i in 1:(length(quantiles))) {
+    Discharge <- quantiles[[i]]
+        # Find points where Flow_Inst is above target discharge
+    # Points always intersect when above=TRUE, then FALSE or reverse 
+    above<-Site_uv$Flow_Inst>Discharge
+    intersect.index<-which(diff(above)!=0) #Vector of index values immediately before flow passes quantile
+    
+    # Find the slopes for each line segment.
+    Intersect.slopes <- Site_uv$Flow_Inst[intersect.index+1]-Site_uv$Flow_Inst[intersect.index]
+    # Estimate time where target quantile crosses interpolated discharge
+    x.points <- intersect.index + ((Discharge - Site_uv$Flow_Inst[intersect.index]) / (Intersect.slopes))
+    intersect.points <- as.data.frame(x.points)
+    
+    suppressWarnings(index.fraction <- intersect.points %>% #Split decimals
+      separate(x.points, into = c("index","fraction")))
+    
+    index.fraction$fraction <- index.fraction$fraction %>% #Replace NA with 0's
+      replace_na(0)
+    
+    index.fraction$fraction <- paste("0.", index.fraction$fraction, sep="") #Add 0. to front of decimal values
+    index.fraction$secondspast <- round(as.numeric(index.fraction$fraction)*15*60) ####!This needs fix to dynamically update based on collection time (5min/15min etc)###
+    
+    QestTime<-Site_uv$dateTime[as.numeric(index.fraction$index)]+index.fraction$secondspast #Estimated time of target Q
+    
+    Approx_Flow <- as.tibble(approx(Site_uv$dateTime, y = Site_uv$Flow_Inst, xout = QestTime))  %>%
+      left_join(as.tibble(approx(Site_uv$dateTime, y = Site_uv$GH_Inst, xout = QestTime)), by = "x") %>%
+      rename(Flow_Inst = y.x) %>%
+      rename(GH_Inst = y.y) %>%
+      rename(dateTime = x)
+    Approx_Flow$i <- paste(i)
+    Approx_Flow$Quantflow <- quantiles[[i]]
+    Approx_Flow$Quantile <- Quantiles[[i]]
+
+    Runlist[[i]] <- Approx_Flow
+  }
+  
+  SS_results <- bind_rows(Runlist)   #Bind quantile lists into one dataframe
+  
+  SS_results <- SS_results %>% #Clean results based on sensitivity
+                    mutate(pc_diff = (Flow_Inst-Quantflow)/Quantflow) %>%
+                    filter(pc_diff > -Sensitivity & pc_diff < Sensitivity)
+  
+  SS_results$site_no <- Site
+  
+  Sitelist[[p]] <- SS_results
+  }
+  
+  SS_all_results <<- bind_rows(Sitelist)   
+  
+}
+
+
+SS(Sites, Quantiles)
+
+SS_all_results <- left_join(SS_all_results, site_info, by="site_no")
+
+SS_all_results %<>% 
+    mutate(elev_Inst = GH_Inst + alt_va)
+
+writeDir <- paste0("./NWIS_pulls/Patapsco")
+
+fwrite(SS_all_results,paste0(writeDir,"/SQ_all_results.csv"))
+```
+
+```{r Specific Discharge }
+
+SQ <- function(Site, target_stages) {
+
+  Site_dv <- subset(dv_data, site_no==Site)
+  Site_uv <- subset(uv_data, site_no==Site)
+  
+  Runlist = list()   #Create quantile loop list to later bind
+  
+  for(i in 1:(length(target_stages))) {
+    target_stage <- target_stages[[i]]
+      # Find points where Flow_Inst is above target discharge
+      # Points always intersect when above=TRUE, then FALSE or reverse 
+    above<-Site_uv$elev_GH>target_stage
+    intersect.index<-which(diff(above)!=0) #Vector of index values immediately before flow passes quantile
+    
+    # Find the slopes for each line segment.
+    Intersect.slopes <- Site_uv$elev_GH[intersect.index+1]-Site_uv$elev_GH[intersect.index]
+    # Estimate time where target quantile crosses interpolated discharge
+    x.points <- intersect.index + ((target_stage - Site_uv$elev_GH[intersect.index]) / (Intersect.slopes))
+    
+    intersect.points <- as.data.frame(x.points)
+    
+    suppressWarnings(index.fraction <- intersect.points %>% #Split decimals
+      separate(x.points, into = c("index","fraction")))
+    
+    index.fraction$fraction <- index.fraction$fraction %>% #Replace NA with 0's
+      replace_na(0)
+    
+    index.fraction$fraction <- paste("0.", index.fraction$fraction, sep="") #Add 0. to front of decimal values
+    index.fraction$secondspast <- round(as.numeric(index.fraction$fraction)*15*60) ####!This needs fix to dynamically update based on collection time (5min/15min etc)###
+    
+    QestTime<-Site_uv$dateTime[as.numeric(index.fraction$index)]+index.fraction$secondspast #Estimated time of target Q
+    
+    Approx_Flow <- as.tibble(approx(Site_uv$dateTime, y = Site_uv$elev_GH, xout = QestTime))  %>%
+      left_join(as.tibble(approx(Site_uv$dateTime, y = Site_uv$Flow_Inst, xout = QestTime)), by = "x") %>%
+      rename(elev_GH = y.x) %>%
+      rename(Flow_Inst = y.y) %>%
+      rename(dateTime = x)
+    
+    Approx_Flow$i <- paste(i)
+    Approx_Flow$Quantflow <- target_stages[[i]]
+    Approx_Flow$Quantile <- target_stages[[i]]
+
+    Runlist[[i]] <- Approx_Flow
+  }
+  
+  SQ_results <- bind_rows(Runlist)   #Bind quantile lists into one dataframe
+  
+  SQ_results <<- SQ_results %>% #Clean results based on sensitivity
+                    mutate(pc_diff = (elev_GH-Quantflow)/Quantflow) %>%
+                    filter(pc_diff > -Sensitivity & pc_diff < Sensitivity)
+  
+  SQ_results$site_no <<- Site
+  SQ_results$station_nm <<- Site
+
+}
+
+
+# full_name <- c("USGS 01589000 PATAPSCO RIVER AT HOLLOFIELD, MD","USGS 01589000 PATAPSCO RIVER AT HOLLOFIELD, MD")
+# stage <- c(186.9+9,186.9+11)
+# class <- c("action","minor")
+# color <- c("yellow","orange")
+# Hollofield <- data.frame(full_name, stage, class, color)
+# 
+# full_name <- c("USGS 01589025 PATAPSCO RIVER NEAR CATONSVILLE, MD","USGS 01589025 PATAPSCO RIVER NEAR CATONSVILLE, MD","USGS 01589025 PATAPSCO RIVER NEAR CATONSVILLE, MD")
+# stage <- c(66.2+18,66.2+20,66.2+25)
+# class <- c("action","minor","moderate")
+# color <- c("yellow","orange","red")
+# Catonsville <- data.frame(full_name, stage, class, color)
+# 
+# full_name <- c("USGS 01589035 PATAPSCO RIVER NEAR ELKRIDGE, MD","USGS 01589035 PATAPSCO RIVER NEAR ELKRIDGE, MD","USGS 01589035 PATAPSCO RIVER NEAR ELKRIDGE, MD","USGS 01589035 PATAPSCO RIVER NEAR ELKRIDGE, MD")
+# stage <- c(8.5+10,8.5+15,8.5+19,8.5+21)
+# class <- c("action","minor","moderate","major")
+# color <- c("yellow","orange","red","purple")
+# Elkridge <- data.frame(full_name, stage, class, color)
+# 
+# All_Flood <- rbind(Hollofield, Catonsville, Elkridge)
+
+SQ("01589000", c(195.9, 197.9))
+Hollofield_SQ <- SQ_results
+SQ("01589025", c(84.2, 86.2, 91.2))
+Catonsville_SQ <- SQ_results
+SQ("01589035", c(18.5, 23.5, 27.5, 29.5))
+Elkridge_SQ <- SQ_results
+All_SQ<-rbind(Hollofield_SQ,Catonsville_SQ,Elkridge_SQ)
+
+p<-ggplot(All_SQ,aes(x =dateTime , y = Flow_Inst, color = as.factor(Quantflow))) +
+  geom_point(alpha=0.5)+
+  theme_ss_facet(18)+
+ # ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Discharge Quantiles Check - Cleaned")+
+  guides(color = guide_legend(override.aes = list(alpha = 1), reverse=TRUE))+
+  scale_color_viridis_d(name="Flood Action \n Stage")+
+  scale_x_datetime(date_labels = "%Y", date_breaks = "1 year")+
+  geom_smooth(span=2, se=F)+
+  scale_y_log10()+
+  ylab("Instantaneous Discharge (cfs)")+
+  facet_wrap(~station_nm, ncol=1)
+#ggplotly(p)
+p
+
+```
+
+```{r Read pre-written Specific Stage Analysis}
+writeDir <- paste0("./NWIS_pulls/Patapsco")
+#Read DV data  
+SS_all_results <- fread(paste0(writeDir,"/SS_all_results.csv"), colClasses=c(site_no="character")) 
+SS_all_results$dateTime <- fastPOSIXct(SS_all_results$dateTime)
+SS_all_results %<>% mutate(label = paste0(Quantile*100,"%: ", round(Quantflow,0)," cfs"))
+
+```
+
+```{r Plot Quantile Check Results}
+p <- ggplot(SS_all_results, aes(x=dateTime, y=Flow_Inst,color=as.factor(Quantile*100)))+
+  geom_point(alpha=0.5)+
+  theme_ss_facet(18)+
+ # ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Discharge Quantiles Check - Cleaned")+
+  guides(color = guide_legend(override.aes = list(alpha = 1), reverse=TRUE))+
+  scale_color_viridis_d(name="Daily Discharge\nQuantile", labels = paste0(unique(SS_all_results$Quantile)*100, "%"))+
+  scale_x_datetime(date_labels = "%Y", date_breaks = "1 year")+
+  ylab("Instantaneous Discharge (cfs)")+
+  facet_wrap(~full_name, ncol=1)
+#ggplotly(p)
+p
+ggsave(plot = p, filename = "./Manuscript_Output/Quant_Check.png", height = height, width = width)
+```
+
+```{r Plot Results}
+p <- ggplot(data=subset(SS_all_results), aes(x=dateTime,y=GH_Inst,color=as.factor(i)))+
+  geom_point(alpha=0.3)+
+ # ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Specific Stage for all Flow Quantiles")+
+  theme_ss_facet(18)+
+  scale_color_viridis_d(name="Daily Discharge\nQuantile", 
+                       #breaks = unique(SS_all_results$Quantile),   
+                       labels = paste0(unique(SS_all_results$Quantile)*100, "%"))+
+  guides(colour = guide_legend(reverse=TRUE))+
+  scale_x_datetime(date_labels = "%Y",date_breaks = "1 year")+
+  ylab("Stage, ft (NAVD88)")+
+  #geom_smooth(method="gam",alpha=0.5,se=FALSE)+
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.3), span=0.3, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.5), span=0.3, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.7), span=0.3, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.8), span=0.1, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.85), span=0.1, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.9), span=0.1, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.95), span=0.1, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.98), span=0.2, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.99), span=0.3, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.9975), span=0.4, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.999), span=0.6, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.9999), span=0.7, method='loess', se=FALSE) +
+  geom_smooth(data = SS_all_results %>% filter(Quantile==0.9999999), span=0.7, method='loess', se=FALSE) +
+  geom_vline(xintercept=as.numeric(as.POSIXct(dam_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(Bloede_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_2)), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_1)), linetype=2)+
+  facet_wrap(~full_name, ncol=1, scales="free_y")
+#ggplotly(p)
+p
+ggsave(plot = p, filename = "./Manuscript_Output/All_SS.png", height = height, width = width)
+
+```
+
+```{r for 80% quantile} 
+#Needs proper facet scale with similar scaling but different limits
+SS_all_results <- data.table(SS_all_results)
+
+SS_all_results[site_no == "01589000",y_min := 188]
+SS_all_results[site_no == "01589000",y_max := 190]
+SS_all_results[site_no == "01589025",y_min := 77.5]
+SS_all_results[site_no == "01589025",y_max := 79.5]
+SS_all_results[site_no == "01589035",y_min := 14]
+SS_all_results[site_no == "01589035",y_max := 16]
+
+SS_all_results %<>% mutate(label = paste0(Quantile*100,"%: ", round(Quantflow,0)," cfs"))
+
+full_name <- c("USGS 01589000 PATAPSCO RIVER AT HOLLOFIELD, MD","USGS 01589000 PATAPSCO RIVER AT HOLLOFIELD, MD")
+stage <- c(186.9+9,186.9+11)
+class <- c("action","minor")
+color <- c("yellow","orange")
+Hollofield <- data.frame(full_name, stage, class, color)
+
+full_name <- c("USGS 01589025 PATAPSCO RIVER NEAR CATONSVILLE, MD","USGS 01589025 PATAPSCO RIVER NEAR CATONSVILLE, MD","USGS 01589025 PATAPSCO RIVER NEAR CATONSVILLE, MD")
+stage <- c(66.2+18,66.2+20,66.2+25)
+class <- c("action","minor","moderate")
+color <- c("yellow","orange","red")
+Catonsville <- data.frame(full_name, stage, class, color)
+
+full_name <- c("USGS 01589035 PATAPSCO RIVER NEAR ELKRIDGE, MD","USGS 01589035 PATAPSCO RIVER NEAR ELKRIDGE, MD","USGS 01589035 PATAPSCO RIVER NEAR ELKRIDGE, MD","USGS 01589035 PATAPSCO RIVER NEAR ELKRIDGE, MD")
+stage <- c(8.5+10,8.5+15,8.5+19,8.5+21)
+class <- c("action","minor","moderate","major")
+color <- c("yellow","orange","red","purple")
+Elkridge <- data.frame(full_name, stage, class, color)
+
+All_Flood <- rbind(Hollofield, Catonsville, Elkridge)
+rm(Hollofield,Catonsville,Elkridge)
+
+p<- ggplot(data=subset(SS_all_results,Quantile==0.8), aes(x=dateTime,y=elev_Inst,color=label))+
+  theme_ss_facet(18)+
+ # ggtitle(paste("USGS ", Site, sitedata$station_nm), subtitle = "Specific Stage for all Flow Quantiles")+
+  scale_color_viridis_d(name="80%\nDaily Discharge\nQuantile", option="B", end=0.8,label = c("306 cfs","328 cfs","366 cfs"))+
+  guides(colour = guide_legend(reverse=FALSE))+
+  scale_x_datetime(date_labels = "%Y",date_breaks = "1 year")+
+  ylab("Stage, ft (NAVD88)")+
+  geom_vline(xintercept=as.numeric(as.POSIXct(dam_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(Bloede_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_2)), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_1)), linetype=2)+
+  #geom_hline(data = All_Flood, aes(yintercept = stage), color=All_Flood$color) +
+  geom_point(alpha=0.3)+
+  geom_smooth(alpha=0.05,span=0.1, se=FALSE)+
+  geom_blank(aes(y=y_min))+
+  geom_blank(aes(y=y_max))+
+  facet_wrap(~full_name, ncol=1, scales="free_y")
+#ggplotly(p)
+p
+ggsave(plot = p, filename = "./Manuscript_Output/SS_80.png", height = height, width = width)
+
+```
+
+```{r Slope calculation for Elkridge baseline return}
+elk_fall <- SS_all_results %>% filter(Quantile==0.8) %>% filter(site_no=="01589035") %>%
+  filter(dateTime > "2013-03-01 00:00:00" & dateTime < "2016-07-1 00:00:00") 
+
+elk_fall$elev_Inst <- elk_fall$elev_Inst-14.572
+p<- ggplot(elk_fall, aes(x=elev_Inst, y=dateTime))+
+  geom_point()+geom_smooth(method="lm")
+p
+
+fit <- lm(data=elk_fall, dateTime ~ elev_Inst)
+newData$x <- 0
+predict(fit, 0)
+```
+
+```{r for 98% quantile} 
+#Needs proper facet scale with similar scaling but different limits
+SS_all_results <- data.table(SS_all_results)
+
+SS_all_results[site_no == "01589000",y_min := 189.5]
+SS_all_results[site_no == "01589000",y_max := 191.5]
+SS_all_results[site_no == "01589025",y_min := 79]
+SS_all_results[site_no == "01589025",y_max := 83]
+SS_all_results[site_no == "01589035",y_min := 16]
+SS_all_results[site_no == "01589035",y_max := 20]
+
+SS_all_results %<>% mutate(label = paste0(Quantile*100,"%: ", round(Quantflow,0)," cfs"))
+
+p<- ggplot(data=subset(SS_all_results,Quantile==0.98), aes(x=dateTime,y=elev_Inst,color=as.factor(site_no)))+
+  #geom_hline(data = All_Flood, aes(yintercept = stage), color=All_Flood$color, linetype=5,size=1.05) +
+  geom_point(alpha=1)+
+  theme_ss_facet(18)+
+  scale_color_viridis_d(name="98%\nDaily Discharge\nQuantile", option="B",label = c("1306 cfs","1400 cfs","1579 cfs"), end = 0.8)+
+  scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c(start,end), format = "%Y-%m-%d")))+
+  ylab("Stage, ft (NAVD88)")+
+  geom_smooth(span=0.2, se=FALSE,size=1.2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(dam_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(Bloede_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_2)), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_1)), linetype=2)+
+    facet_wrap(~full_name, ncol=1, scales="free_y")+
+   geom_blank(aes(y=y_min))+
+   geom_blank(aes(y=y_max))
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/SS_98.png", height = height, width = width)
+```
+
+```{r Inverse Plot - What discharge per stage?}
+
+ggplot(data=subset(SS_all_results,Quantile==0.9999999), aes(x=dateTime, y=Flow_Inst, color=as.factor(site_no)))+
+ # geom_hline(data = All_Flood, aes(yintercept = stage), color=All_Flood$color, linetype=5,size=1.05) +
+  geom_point(alpha=1)+
+    scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c(start,end), format = "%Y-%m-%d"))) +
+    facet_wrap(~full_name, ncol=1, scales="free_y")
+
+
+```
+
+```{r for 99% quantile} 
+#Needs proper facet scale with similar scaling but different limits
+SS_all_results <- data.table(SS_all_results)
+
+SS_all_results[site_no == "01589000", y_min := 193]
+SS_all_results[site_no == "01589000", y_max := 197.5]
+SS_all_results[site_no == "01589025", y_min := 83]
+SS_all_results[site_no == "01589025", y_max := 87.5]
+SS_all_results[site_no == "01589035", y_min := 22]
+SS_all_results[site_no == "01589035", y_max := 26.5]
+
+SS_all_results %<>% mutate(label = paste0(Quantile*100,"%: ", round(Quantflow,0)," cfs"))
+
+p<- ggplot(data=subset(SS_all_results,Quantile==0.9999999), aes(x=dateTime,y=elev_Inst,color=as.factor(site_no)))+
+  geom_hline(data = All_Flood, aes(yintercept = stage), color=All_Flood$color, linetype=5,size=1.05) +
+  geom_point(alpha=1)+
+  theme_ss_facet(18)+
+  scale_color_viridis_d(name="99.99999%\nDaily Discharge\nQuantile", option="B",label = c("8570 cfs","9000 cfs","9990 cfs"), end = 0.8)+
+  scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c(start,end), format = "%Y-%m-%d")))+
+  ylab("Stage, ft (NAVD88)")+
+  geom_smooth(span=1, se=FALSE,size=1.2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(dam_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(Bloede_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_2)), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_1)), linetype=2)+
+    facet_wrap(~full_name, ncol=1, scales="free_y")+
+   geom_blank(aes(y=y_min))+
+   geom_blank(aes(y=y_max))
+#ggplotly(p)
+p
+ggsave(plot = p, filename = "./Manuscript_Output/SS_9999999.png", height = height, width = width)
+```
+
+```{r Measurement}
+
+#meas
+#area*velocity = discharge 
+#area/width = height
+#Fr = Velocity/sqrt(32.2*depth) <-- check that this is correct
+
+meas_data %<>%
+  mutate(chan_depth = chan_area/chan_width) %>%
+  mutate(Froude = chan_velocity/(sqrt(32.2*chan_depth)))
+# Fr <1 - subcritical flow
+# Fr >1 - supercritical flow
+# Fr = critical flow
+
+Q_window_low <- 10
+Q_window_high <- 500
+
+data<-meas_data %>%
+  filter(discharge_va > Q_window_low & discharge_va < Q_window_high) 
+p<-ggplot(data,aes(x=measurement_dateTime, y=Froude, color=discharge_va)) +
+  scale_color_viridis_c(name="Measurement Q\ncfs")  +
+  ggtitle(paste0("Estimated Froude for field measurements between ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  geom_smooth(color="darkgrey", span=0.2, se=FALSE,size=1.2)+
+    geom_point()+
+  scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c("2010-09-01",end), format = "%Y-%m-%d")))+
+  geom_vline(aes(xintercept=as.numeric(as.POSIXct(strptime(c(dam_start), format = "%Y-%m-%d")))),linetype=4)+
+  geom_vline(aes(xintercept=as.numeric(as.POSIXct(strptime(c(Bloede_start), format = "%Y-%m-%d")))),linetype=4)+
+  geom_vline(aes(xintercept=as.numeric(as.POSIXct(strptime(c(EC_2), format = "%Y-%m-%d")))),linetype=2)+
+  geom_vline(aes(xintercept=as.numeric(as.POSIXct(strptime(c(EC_1), format = "%Y-%m-%d")))),linetype=2)+
+  facet_wrap(~full_name, ncol=1)+
+  ylim(0,0.5)+
+  ylab("Estimated Froude Number")
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/Froude_ts.png", height = height, width = width)
+```
+
+```{r velocity ~ by Year, echo=FALSE}
+data<-meas_data %>%
+  #filter(discharge_va > 1 & discharge_va < 2000) %>%
+  filter(measurement_dt > "2009-10-01") %>%
+  separate(measurement_dt, c("Year", "Month","Day")) 
+p<-ggplot(data, aes(x=discharge_va, y=chan_velocity, color=as.factor(Year),group=as.factor(Year))) +
+  geom_point(alpha=0.5)+
+  scale_color_viridis_d()  +
+  ggtitle(paste0("Field measured channel velocity between ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  xlim(1,10000)+
+  scale_y_log10()+
+  scale_x_log10()+
+  ylab("Field Measured Channel Velocity (f/s)")+
+  xlab("Field Measured Discharge (cfs)")+
+  theme(legend.title=element_blank(), legend.text = element_text(size=16), axis.title.x = element_text(12))+
+  geom_smooth(se=FALSE, method = "lm") +
+  facet_wrap(~full_name, ncol=1)
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/Velocity_year.png", height = height, width = width)
+
+```
+
+```{r velocity - Timeseries}
+Q_window_low <- 50
+Q_window_high <- 500
+data<-meas_data %>%
+  filter(discharge_va > Q_window_low & discharge_va < Q_window_high) 
+p<-ggplot(data, aes(x=measurement_dateTime, y=chan_velocity, color=discharge_va)) +
+  scale_color_viridis_c(name="Measurement Q\ncfs")  +
+  ggtitle(paste0("Field measured channel velocity between ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  #geom_smooth(color="darkgrey", span=0.28, se=FALSE,size=1.2)+
+    geom_point()+
+  scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c("2010-09-01",end), format = "%Y-%m-%d")))+
+  geom_vline(aes(xintercept=as.numeric(as.POSIXct(strptime(c(dam_start), format = "%Y-%m-%d")))),linetype=4)+
+  geom_vline(aes(xintercept=as.numeric(as.POSIXct(strptime(c(Bloede_start), format = "%Y-%m-%d")))),linetype=4)+
+  geom_vline(aes(xintercept=as.numeric(as.POSIXct(strptime(c(EC_2), format = "%Y-%m-%d")))),linetype=2)+
+  geom_vline(aes(xintercept=as.numeric(as.POSIXct(strptime(c(EC_1), format = "%Y-%m-%d")))),linetype=2)+
+  facet_wrap(~full_name, ncol=1)+
+  ylab("Channel Velocity (f/s)")
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/Velocity_ts.png", height = height, width = width)
+
+```
+
+```{r Channel velocity ~ Froude by Year, echo=FALSE}
+data<-meas_data %>%
+  #filter(discharge_va > 1 & discharge_va < 2000) %>%
+  filter(measurement_dt > "2009-10-01") %>%
+  separate(measurement_dt, c("Year", "Month","Day")) 
+p <- ggplot(data, aes(x=discharge_va, y=Froude, color=as.factor(Year),group=as.factor(Year))) +
+  geom_point(alpha=0.5)+
+  scale_color_viridis_d()  +
+    ggtitle(paste0("Estimated Froude number between ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  xlim(1,10000)+
+  scale_y_log10()+
+  scale_x_log10()+
+  ylab("Estimated Froude number")+
+  xlab("Field Measured Discharge (cfs)")+
+  geom_smooth(se=FALSE, method = "lm") +
+  facet_wrap(~full_name, ncol=1)+
+  theme(legend.title=element_blank(), legend.text = element_text(size=16), axis.title.x = element_text(12))
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/Froude_year.png", height = height, width = width)
+
+```
+
+```{r Depth by Year}
+data<-meas_data %>%
+  #filter(discharge_va > 1 & discharge_va < 2000) %>%
+  filter(measurement_dt > "2009-10-01") %>%
+  separate(measurement_dt, c("Year", "Month","Day")) #%>%
+  #filter(Year == "2010"|Year == "2011"|Year == "2014"|Year == "2018")
+
+p <- ggplot(data, aes(x=discharge_va, y=-chan_depth, color=as.factor(Year),group=as.factor(Year))) +
+  geom_point(alpha=0.5)+
+  scale_color_viridis_d()  +
+  # ggtitle(paste0("Estimated Froude number between ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  xlim(1,10000)+
+#  scale_y_log10()+
+  scale_x_log10()+
+  ylab("Estimated Depth")+
+  xlab("Field Measured Discharge (cfs)")+
+  geom_smooth(se=FALSE, method = "lm") +
+  facet_wrap(~full_name, ncol=1)+
+  theme(legend.title=element_blank(), legend.text = element_text(size=16), axis.title.x = element_text(12))
+#ggplotly(p)
+p
+ggsave(plot = p, filename = "./Manuscript_Output/Depth_rating.png", height = height, width = width)
+
+```
+
+```{r Depth - Timeseries, echo=FALSE}
+Q_window_low <- 50
+Q_window_high <- 500
+
+data<-meas_data %>%
+  filter(discharge_va > Q_window_low & discharge_va < Q_window_high)
+p<-ggplot(data,aes(x=measurement_dateTime, y=-chan_depth, color=discharge_va)) +
+  geom_point()+
+  scale_color_viridis_c()  +
+    ggtitle(paste0("Water depth measured between ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  geom_smooth(alpha=0.3, color="grey", span=0.25, se=FALSE)+
+    geom_vline(xintercept=as.numeric(as.POSIXct(dam_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(Bloede_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_2)), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_1)), linetype=2)+
+  xlim(as.POSIXct("2009-10-01"),as.POSIXct("2018-10-23"))+
+    scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c("2010-09-01",end), format = "%Y-%m-%d")))+
+  facet_wrap(~full_name, ncol=1)+
+  ylab("Average water depth (ft)")
+p
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/Depth_year.png", height = height, width = width)
+
+```
+
+
+```{r Bed by Year}
+data<-meas_data %>%
+  #filter(discharge_va > 1 & discharge_va < 2000) %>%
+  filter(measurement_dt > "2009-10-01") %>%
+  separate(measurement_dt, c("Year", "Month","Day")) #%>%
+  #filter(Year == "2010"|Year == "2011"|Year == "2014"|Year == "2018")
+
+data <- data.table(data)
+
+data[site_no == "01589000", y_min := 185]
+data[site_no == "01589000", y_max := 190]
+data[site_no == "01589025", y_min := 73]
+data[site_no == "01589025", y_max := 78]
+data[site_no == "01589035", y_min := 11]
+data[site_no == "01589035", y_max := 16]
+
+p <- ggplot(data, aes(x=discharge_va, y=gage_height_va-chan_depth+alt_va, color=as.factor(Year),group=as.factor(Year))) +
+  geom_point(alpha=0.8)+
+  scale_color_viridis_d()  +
+  # ggtitle(paste0("Estimated Froude number between ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  xlim(1,10000)+
+#  scale_y_log10()+
+  scale_x_log10()+
+  ylab("Corrected Bed Elevation (ft NAVD88)")+
+  xlab("Field Measured Discharge (cfs)")+
+  geom_smooth(se=FALSE, method = "lm", alpha=0.4) +
+  facet_wrap(~full_name, ncol=1, scales= "free_y")+
+    geom_blank(aes(y=y_min))+
+   geom_blank(aes(y=y_max))+
+  theme(legend.title=element_blank(), legend.text = element_text(size=16), axis.title.x = element_text(12))
+#ggplotly(p)
+p
+ggsave(plot = p, filename = "./Manuscript_Output/Bed_rating.png", height = height, width = width)
+
+```
+```{r Bed - Timeseries}
+Q_window_low <- 5
+Q_window_high <- 5000000
+
+data<-meas_data %>%
+  filter(discharge_va > Q_window_low & discharge_va < Q_window_high)
+data <- data.table(data)
+
+data[site_no == "01589000", y_min := 185]
+data[site_no == "01589000", y_max := 190]
+data[site_no == "01589025", y_min := 73]
+data[site_no == "01589025", y_max := 78]
+data[site_no == "01589035", y_min := 11]
+data[site_no == "01589035", y_max := 16]
+
+p<-ggplot(data,aes(x=measurement_dateTime, y=gage_height_va-chan_depth+alt_va, color=discharge_va)) +
+  geom_point()+
+  scale_color_viridis_c()  +
+    ggtitle(paste0("Corrected bed elevation at ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  geom_smooth(alpha=0.3, color="grey", span=0.25, se=FALSE)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(dam_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(Bloede_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_2)), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.POSIXct(EC_1)), linetype=2)+
+   facet_wrap(~full_name, ncol=1, scales="free_y")+
+   geom_blank(aes(y=y_min))+
+   geom_blank(aes(y=y_max))+
+  xlim(as.POSIXct("2009-10-01"),as.POSIXct("2018-10-23"))+
+    scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c("2010-09-01",end), format = "%Y-%m-%d")))+
+  ylab("Corrected bed elevation (ft NAVD88)")
+p
+ggsave(plot = p, filename = "./Manuscript_Output/Bed_ts_50500.png", height = height, width = width)
+#ggplotly(p)
+p <- ggplot(data, aes(x=discharge_va, y=gage_height_va-chan_depth+alt_va, color=as.factor(Year),group=as.factor(Year))) +
+  geom_point(alpha=0.8)+
+  scale_color_viridis_d()  +
+  # ggtitle(paste0("Estimated Froude number between ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  xlim(1,10000)+
+#  scale_y_log10()+
+  scale_x_log10()+
+  ylab("Corrected Bed Elevation (ft NAVD88)")+
+  xlab("Field Measured Discharge (cfs)")+
+  geom_smooth(se=FALSE, method = "lm", alpha=0.4) +
+  facet_wrap(~full_name, ncol=1, scales= "free_y")+
+    geom_blank(aes(y=y_min))+
+   geom_blank(aes(y=y_max))+
+  theme(legend.title=element_blank(), legend.text = element_text(size=16), axis.title.x = element_text(12))
+#ggplotly(p)
+p
+```
+
+
+```{r Stage-Depth = Bed?}
+data<-meas_data %>%
+  #filter(discharge_va > 1 & discharge_va < 2000) %>%
+  filter(measurement_dt > "2009-10-01") %>%
+  separate(measurement_dt, c("Year", "Month","Day")) #%>%
+  #filter(Year == "2010"|Year == "2011"|Year == "2014"|Year == "2018")
+
+p <- ggplot(data, aes(x=discharge_va, y=gage_height_va-chan_depth, color=as.factor(Year),group=as.factor(Year))) +
+  geom_point(alpha=0.8)+
+  scale_color_viridis_d()  +
+  # ggtitle(paste0("Estimated Froude number between ",Q_window_low,"-",Q_window_high," cfs"))+
+  theme_ss_facet(18)+
+  xlim(1,10000)+
+#  scale_y_log10()+
+  scale_x_log10()+
+  ylab("Estimated Bed Residual (ft)")+
+  xlab("Field Measured Discharge (cfs)")+
+  facet_wrap(~full_name, ncol=1)+
+  geom_smooth(se=FALSE, method = "lm", alpha=0.2) +
+  theme(legend.title=element_blank(), legend.text = element_text(size=16), axis.title.x = element_text(12))
+#ggplotly(p)
+p
+```
+
+#Sediment Transport Analysis 
+
+```{r}
+data <- dv_data %>%
+  select(Date, site_no,Flow,Turb,`80154`,full_name) %>%
+    na.omit() %>% group_by(site_no) %>%  
+    filter(Flow!=-999999) %>%
+    filter(Turb!=-999999) %>%
+    mutate(cumQ=cumsum(Flow),cumT=cumsum(`80154`)) %>% ungroup() 
+ggplot(data, aes(x=Date, y=cumT, group=site_no, color=full_name))+
+  geom_path(size=2)+
+  theme_ss_facet(18)+
+  scale_x_date(date_labels = "%Y",date_breaks = "1 year",limits= as.Date(strptime(c("2010-09-01","2018-1-01"), format = "%Y-%m-%d")))+
+   ylab("Cumulative Turbidity Trace")+
+   xlab("Cumulative Flow in cfs")+
+  scale_color_viridis_d(labels=c("Hollofield","Catonsville","Elkridge"))+
+   theme(legend.title=element_blank())
+```
+
+```{r}
+data<-dv_data %>%
+ # select(Date, site_no,Flow,Turb) %>%
+  #na.omit() %>% 
+  group_by(site_no) %>%
+  filter(Date > "2010-10-1") %>%
+  select(site_no, Date,Flow,`80154`, `80155`) %>%
+ # separate(Date, by="-", into = c("Year","Month","Day")) %>%
+ # unite(MonthYear,Year,Month,sep=".") %>%
+  group_by(site_no) %>% mutate(cumQ=cumsum(Flow),cumSSC=cumsum(`80155`)) %>%
+  select(site_no,cumSSC,Date) %>%
+  spread(site_no,cumSSC) %>%
+  mutate(diff00_25 = `01589025`-`01589000`) %>%
+  mutate(diff25_35 = `01589035`-`01589025`)  %>%
+  gather(key=variable, value=value, -Date) 
+data1 <- data %>%
+  filter(variable=="diff00_25"|variable=="diff25_35")
+p<-ggplot(data,aes(x=Date, y=value, color=variable, group=variable))+
+  geom_path(data=data, size=1.5, alpha=0.5)+
+  geom_path(data=data1, size=2.5, alpha=1)+
+  theme_ss_facet(18)+
+  ylab("Cumulative Sediment Load (tons)")+
+  scale_color_viridis_d(option="D",labels=c("Hollofield","Catonsville","Elkridge","Gain/Loss between\nHollofiend and Catonsville", "Gain/Loss between\nCatonsville and Elkridge"))+
+  theme(legend.position="top")+
+  #ylim(-10000,700000)+
+  geom_hline(yintercept=0, linetype=1)+
+  geom_vline(xintercept=as.numeric(as.Date(dam_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.Date(Bloede_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.Date(EC_2)), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.Date(EC_1)), linetype=2)+
+  scale_x_date(date_labels = "%Y",date_breaks = "1 year",limits= as.Date(strptime(c("2010-09-01","2017-11-01"), format = "%Y-%m-%d")))+
+  theme(legend.title=element_blank())
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/SSC_Cum.png", height = height, width = width)
+```
+
+```{r PC Change difference}
+
+asinh_trans <- function(){
+  trans_new(name = 'asinh', transform = function(x) asinh(x), 
+            inverse = function(x) sinh(x))
+}
+
+data<-dv_data %>%
+ # select(Date, site_no,Flow,Turb) %>%
+  #na.omit() %>% 
+  group_by(site_no) %>%
+  filter(Date > "2010-10-1") %>%
+  select(site_no, Date,Flow,`80154`, `80155`) %>%
+ # separate(Date, by="-", into = c("Year","Month","Day")) %>%
+ # unite(MonthYear,Year,Month,sep=".") %>%
+  group_by(site_no) %>% mutate(pcQ=cumsum(Flow),cumSSC=cumsum(`80155`)) %>%
+  select(site_no,`80154`,Date) %>%
+  spread(site_no,`80154`) %>%
+  #mutate(diff25_00 = (`01589025`-`01589000`)/`01589000`) %>%
+  mutate(diff35_25 = (`01589035`-`01589025`)/`01589025`)  %>%
+  mutate(diff25_35 = (`01589025`-`01589035`)/`01589035`)  %>%
+  gather(key=variable, value=value, -Date) %>%
+  filter(variable=="diff25_00"|variable=="diff35_25"|variable=="diff25_35")
+p<-ggplot(data, aes(x=Date, y=value, color=variable,group=variable))+
+  geom_path(size=2, alpha=0.7)+
+  theme_ss_facet(18)+
+  #ylab("Cumulative Sediment Load")+
+  scale_color_viridis_d(begin=0.5, labels=c("Catonsville", "Elkridge"))+
+  #scale_y_continuous(trans="asinh", breaks=c(-300,-150,-100,-50,-10,-1,0,1,10,50,100,150,300))+
+  theme(legend.position="top")+
+  ylab("Percent difference in daily suspended sediment load")+
+  geom_hline(yintercept=0, linetype=1)+
+  geom_vline(xintercept=as.numeric(as.Date(dam_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.Date(Bloede_start)), linetype=4)+
+  geom_vline(xintercept=as.numeric(as.Date(EC_2)), linetype=2)+
+  geom_vline(xintercept=as.numeric(as.Date(EC_1)), linetype=2)+
+  scale_x_date(date_labels = "%Y",date_breaks = "1 year",limits= as.Date(strptime(c("2010-09-01","2018-1-01"), format = "%Y-%m-%d")))+
+     theme(legend.title=element_blank(), legend.text = element_text(size=14))
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/SSC_PCchange.png", height = height, width = width)
+
+```
+
+```{r DV Transport Plots}
+data<-dv_data %>%
+  group_by(site_no) %>% 
+  filter(Flow != -999999) %>%
+  filter(Date > "2010-10-28" & Date < "2017-08-01") %>%
+  separate(Date, by="-", into = c("Year","Month","Day"))%>% ungroup()
+  #unite(MonthYear,Year,Month,sep=".")  %>%
+p<-ggplot(data,aes(x=Flow, y=`80154`+1, group=site_no, color=site_no))+
+  geom_point(size=1.5, alpha=0.5)+
+  theme_ss_facet(18)+
+  scale_y_log10()+
+  scale_x_log10()+
+  ylab("Mean Daily SSC (mg/L)")+
+  xlab("Mean Daily Flow (cfs)")+
+  scale_color_viridis_d(labels=c("Hollofield","Catonsville","Elkridge"))+
+  geom_smooth(method="lm", se=F)+
+  facet_grid(Year~.)+
+  theme(legend.title=element_blank(), legend.text = element_text(size=16))
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/SSC_Transport_year.png", height = height, width = width)
+
+#ggplotly(plot)
+```
+
+```{r}
+data<-dv_data %>%
+  group_by(site_no) %>% 
+  filter(Flow != -999999) %>%
+  filter(Turb != -999999) %>%
+  filter(Date > "2010-10-28" & Date < "2017-08-01") %>%
+  separate(Date, by="-", into = c("Year","Month","Day")) %>%
+  unite(MonthYear,Year,Month,sep=".") %>% ungroup() %>% select(Flow, Turb, full_name,MonthYear) %>% na.omit()
+p<-ggplot(data,aes(x=Flow, y=Turb, group=full_name, color=full_name, frame=MonthYear))+
+  geom_point(size=1.5, alpha=0.2)+
+  theme_ss_facet(18)+
+  #scale_y_log10()+
+  #scale_x_log10()+
+  ylab("Mean Daily SSC (mg/L)")+
+  xlab("Mean Daily Flow (cfs)")+
+  scale_color_viridis_d()+
+  geom_smooth(method="lm", se=F)+
+  facet_wrap(~full_name, ncol=1)+
+  theme(legend.title=element_blank(), legend.text = element_text(size=16), axis.title.x = element_text(12))
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/SSC_Transport_site.png", height = height, width = width)
+
+```
+
+```{r}
+data<-dv_data %>%
+  group_by(site_no) %>% 
+  filter(Flow != -999999) %>%
+  filter(Date > "2010-10-28" & Date < "2017-08-01") %>%
+  separate(Date, by="-", into = c("Year","Month","Day"))
+  unite(MonthYear,Year,Month,sep=".") %>% ungroup() 
+p<-ggplot(data,aes(x=Flow, y=Turbidity, group=Year, color=Year))+
+  geom_point(size=1.5, alpha=0.2)+
+  theme_ss_facet(18)+
+  scale_y_log10()+
+  scale_x_log10()+
+  ylab("Mean Daily SSC (mg/L)")+
+  xlab("Mean Daily Flow (cfs)")+
+  scale_color_viridis_d()+
+  geom_smooth(method="lm", se=F)+
+  facet_wrap(~full_name, ncol=1)+
+  theme(legend.title=element_blank(), legend.text = element_text(size=16), axis.title.x = element_text(12))
+#ggplotly(p)
+ggsave(plot = p, filename = "./Manuscript_Output/SSC_Transport_site.png", height = height, width = width)
+
+```
+
