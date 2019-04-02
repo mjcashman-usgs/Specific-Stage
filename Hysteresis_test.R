@@ -1,6 +1,6 @@
 if (!require("pacman")) install.packages("pacman"); library(pacman)
 
-p_load(smwrData, DVstats)
+p_load(smwrData, DVstats, tidyverse)
 data(ChoptankFlow)
 # Process by calendar year as that is the retrieval range
 ChopPart <- with(ChoptankFlow, hysep(Flow, datetime, da=113,STAID="01491000"))
@@ -53,11 +53,14 @@ hyst_data <- Q_Storm  %>%
   select(site_no,dateTime,Q_cfs,GH_Inst,Turb_Inst,elev_GH,Qual_storm,EventID) %>%
   group_by(EventID) %>%
   mutate(scale_turb = (Turb_Inst-min(Turb_Inst))/(max(Turb_Inst)-min(Turb_Inst))) %>%
-  mutate(scale_Q = (Q_cfs-min(Q_cfs))/(max(Q_cfs)-min(Q_cfs)))
+  mutate(scale_Q = (Q_cfs-min(Q_cfs))/(max(Q_cfs)-min(Q_cfs))) %>%
+  na.omit() %>%
+  mutate(max_turb = max(Turb_Inst)) %>%
+  filter(max_turb > 100)
 
 #Plot 
 for (i in unique(hyst_data$EventID)) {
-  plot_data <- hyst_data %>%
+ plot_data <- hyst_data %>%
     filter(EventID == i )
   
  lab_dates <- pretty(plot_data$dateTime)
@@ -67,11 +70,14 @@ for (i in unique(hyst_data$EventID)) {
    p + annotate("text", x = 4, y = 25, label = "Some text")
  
   plot<- ggplot(plot_data, aes(x=scale_Q,y=scale_turb, color=as.numeric(dateTime)))+
-  geom_path(size=2)+
-  geom_point()+
+  geom_path(size=2, alpha = 0.7)+
+  geom_segment(aes(xend=c(tail(x, n=-1), NA), yend=c(tail(y, n=-1), NA)),
+                 arrow=arrow(length=unit(0.3,"cm"))) + 
+  geom_point(alpha = 0.2)+
   scale_color_viridis_c(breaks = as.numeric(lab_dates), 
                         labels = lab_dates)+
-    annotate("text", label = paste0("Storm Max ", label_Q," cfs", "\nStorm Turb ", label_Turb, " FNU"), x=0.2,y=1)
+    annotate("text", label = paste0("Storm Max ", label_Q," cfs", "\nStorm Turb ", label_Turb, " FNU",
+                                    "\n Storm Event ", i, " of ", max(hyst_data$EventID)), x=0.2,y=0.8)
  print(plot)
 }
 
