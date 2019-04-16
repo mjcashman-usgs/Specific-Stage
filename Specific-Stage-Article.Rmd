@@ -551,7 +551,7 @@ data<-meas_data %>%
 p<-ggplot(data, aes(x=discharge_va, y=chan_velocity, color=as.factor(Year),group=as.factor(Year))) +
   geom_point(alpha=0.5)+
   scale_color_viridis_d()  +
-  ggtitle(paste0("Field measured channel velocity between ",Q_window_low,"-",Q_window_high," cfs"))+
+  ggtitle(paste0("Field measured channel velocity by discharge"))+
   theme_ss_facet(18)+
   xlim(1,10000)+
   scale_y_log10()+
@@ -567,15 +567,15 @@ ggsave(plot = p, filename = "./Manuscript_Output/Velocity_year.png", height = he
 ```
 
 ```{r velocity - Timeseries}
-Q_window_low <- 50
-Q_window_high <- 500
+Q_window_low <- 10
+Q_window_high <- 200
 data<-meas_data %>%
   filter(discharge_va > Q_window_low & discharge_va < Q_window_high) 
 p<-ggplot(data, aes(x=measurement_dateTime, y=chan_velocity, color=discharge_va)) +
   scale_color_viridis_c(name="Measurement Q\ncfs")  +
   ggtitle(paste0("Field measured channel velocity between ",Q_window_low,"-",Q_window_high," cfs"))+
   theme_ss_facet(18)+
-  #geom_smooth(color="darkgrey", span=0.28, se=FALSE,size=1.2)+
+  geom_smooth(color="darkgrey", span=0.28, se=FALSE,size=1.2)+
     geom_point()+
   scale_x_datetime(date_labels = "%Y",date_breaks = "1 year",limits= as.POSIXct(strptime(c("2010-09-01",end), format = "%Y-%m-%d")))+
   geom_vline(aes(xintercept=as.numeric(as.POSIXct(strptime(c(dam_start), format = "%Y-%m-%d")))),linetype=4)+
@@ -604,7 +604,7 @@ p <- ggplot(data, aes(x=discharge_va, y=Froude, color=as.factor(Year),group=as.f
   scale_x_log10()+
   ylab("Estimated Froude number")+
   xlab("Field Measured Discharge (cfs)")+
-  geom_smooth(se=FALSE, method = "lm") +
+  geom_smooth(se=FALSE) +
   facet_wrap(~full_name, ncol=1)+
   theme(legend.title=element_blank(), legend.text = element_text(size=16), axis.title.x = element_text(12))
 #ggplotly(p)
@@ -780,22 +780,43 @@ p
 ```
 
 #Sediment Transport Analysis 
-
 ```{r}
 data <- dv_data %>%
-  select(Date, site_no,Flow,Turb,`80154`,full_name) %>%
+  select(Date, site_no,Flow,Turb,`80155`,full_name) %>%
     na.omit() %>% group_by(site_no) %>%  
     filter(Flow!=-999999) %>%
     filter(Turb!=-999999) %>%
-    mutate(cumQ=cumsum(Flow),cumT=cumsum(`80154`)) %>% ungroup() 
-ggplot(data, aes(x=Date, y=cumT, group=site_no, color=full_name))+
+    mutate(cumQ=cumsum(Flow),cumSSC=cumsum(`80155`)) %>% ungroup() 
+p <- ggplot(data, aes(x=Date, y=cumT, group=site_no, color=full_name))+
   geom_path(size=2)+
   theme_ss_facet(18)+
   scale_x_date(date_labels = "%Y",date_breaks = "1 year",limits= as.Date(strptime(c("2010-09-01","2018-1-01"), format = "%Y-%m-%d")))+
-   ylab("Cumulative Turbidity Trace")+
+   ylab("Cumulative Sediment Load (tons)")+
    xlab("Cumulative Flow in cfs")+
   scale_color_viridis_d(labels=c("Hollofield","Catonsville","Elkridge"))+
    theme(legend.title=element_blank())
+p
+ggplotly(p)
+
+```
+
+```{r}
+data <- dv_data %>%
+  select(Date, site_no,Flow,Turb,`80155`,full_name) %>%
+    na.omit() %>% group_by(site_no) %>%  
+    filter(Flow!=-999999) %>%
+    filter(Turb!=-999999) %>%
+    mutate(cumQ=cumsum(Flow),cumSSC=cumsum(`80155`)) %>% ungroup() 
+p <- ggplot(data, aes(x=Date, y=cumSSC, group=site_no, color=full_name))+
+  geom_path(size=2)+
+  theme_ss_facet(18)+
+  scale_x_date(date_labels = "%Y",date_breaks = "1 year",limits= as.Date(strptime(c("2010-09-01","2018-1-01"), format = "%Y-%m-%d")))+
+   ylab("Cumulative Sediment Load (tons)")+
+   xlab("Cumulative Flow in cfs")+
+  scale_color_viridis_d(labels=c("Hollofield","Catonsville","Elkridge"))+
+   theme(legend.title=element_blank())
+p
+ggplotly(p)
 ```
 
 ```{r}
@@ -831,6 +852,7 @@ p<-ggplot(data,aes(x=Date, y=value, color=variable, group=variable))+
   scale_x_date(date_labels = "%Y",date_breaks = "1 year",limits= as.Date(strptime(c("2010-09-01","2017-11-01"), format = "%Y-%m-%d")))+
   theme(legend.title=element_blank())
 #ggplotly(p)
+p
 ggsave(plot = p, filename = "./Manuscript_Output/SSC_Cum.png", height = height, width = width)
 ```
 
